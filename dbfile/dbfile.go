@@ -16,12 +16,12 @@ const (
 )
 
 type Entry struct {
-	KLen   uint8
-	VLen   uint32
-	Expire uint32
-	Extra  ExtraEnum
-	Key    []byte
-	Value  []byte
+	KLen     uint8
+	VLen     uint32
+	ExpireAt uint32
+	Extra    ExtraEnum
+	Key      []byte
+	Value    []byte
 }
 
 type File struct {
@@ -90,10 +90,10 @@ func readSingleEntry(fp *os.File) (e Entry, err error) {
 		return
 	}
 	e = Entry{
-		KLen:   uint8(buffer[0]),
-		VLen:   util.Bytes2Uint32(buffer[1:5]),
-		Expire: util.Bytes2Uint32(buffer[5:9]),
-		Extra:  ExtraEnum(buffer[9]),
+		KLen:     uint8(buffer[0]),
+		VLen:     util.Bytes2Uint32(buffer[1:5]),
+		ExpireAt: util.Bytes2Uint32(buffer[5:9]),
+		Extra:    ExtraEnum(buffer[9]),
 	}
 	buffer = make([]byte, int(e.KLen)+int(e.VLen))
 	fp.Read(buffer)
@@ -111,9 +111,9 @@ func NewEntry(key string, value string) (e Entry) {
 	return
 }
 
-func NewEntryWithExpire(key string, value string, expire uint32) (e Entry) {
+func NewEntryWithExpire(key string, value string, expireAt uint32) (e Entry) {
 	e = NewEntry(key, value)
-	e.Expire = expire
+	e.ExpireAt = expireAt
 	return
 }
 
@@ -125,7 +125,7 @@ func (e Entry) Encode() (ret []byte) {
 
 	ret[0] = e.KLen
 	copy(ret[1:5], util.Uint32ToBytes(e.VLen))
-	copy(ret[5:9], util.Uint32ToBytes(e.Expire))
+	copy(ret[5:9], util.Uint32ToBytes(e.ExpireAt))
 	ret[9] = uint8(e.Extra)
 
 	pos := 10 + klenInt
@@ -147,7 +147,7 @@ func (e *Entry) SetDelete() {
 func decodeEntry(ret []byte) (e Entry) {
 	e.KLen = ret[0]
 	e.VLen = util.Bytes2Uint32(ret[1:5])
-	e.Expire = util.Bytes2Uint32(ret[5:9])
+	e.ExpireAt = util.Bytes2Uint32(ret[5:9])
 	e.Extra = ExtraEnum(ret[9])
 	pos := 10 + int(e.KLen)
 	e.Key = ret[10:pos]

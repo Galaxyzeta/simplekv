@@ -16,11 +16,11 @@ import (
 )
 
 type simpleKV struct {
-	files   []*dbfile.File
-	mu      sync.RWMutex
-	indexer index.Indexer
-	cache   cache.Cacher
-	expire  map[string]uint32
+	files    []*dbfile.File
+	mu       sync.RWMutex
+	indexer  index.Indexer
+	cache    cache.Cacher
+	expireAt map[string]uint32
 }
 
 var globalKV *simpleKV
@@ -28,10 +28,10 @@ var globalKV *simpleKV
 // newSimpleKV returns a simplekv but with no files.
 func newSimpleKV() *simpleKV {
 	return &simpleKV{
-		files:   make([]*dbfile.File, 0),
-		indexer: index.NewHashIndexer(), // TODO add option for other indexers
-		mu:      sync.RWMutex{},
-		expire:  make(map[string]uint32),
+		files:    make([]*dbfile.File, 0),
+		indexer:  index.NewHashIndexer(), // TODO add option for other indexers
+		mu:       sync.RWMutex{},
+		expireAt: make(map[string]uint32),
 	}
 }
 
@@ -41,8 +41,6 @@ func (kv *simpleKV) totalOffset() int64 {
 }
 
 func (kv *simpleKV) appendNewFile() *dbfile.File {
-	kv.mu.Lock()
-	defer kv.mu.Unlock()
 	if len(kv.files) == 0 {
 		newFile := dbfile.MustOpen(fmt.Sprintf("%s/%020d.dat", config.DBDir, 0))
 		kv.files = append(kv.files, newFile)
@@ -54,17 +52,12 @@ func (kv *simpleKV) appendNewFile() *dbfile.File {
 }
 
 func (kv *simpleKV) getActiveFile() *dbfile.File {
-	kv.mu.RLock()
-	defer kv.mu.RUnlock()
 	return kv.files[len(kv.files)-1]
 }
 
 // getFileByID return the matching file according to given id.
 // will return nil if not found.
 func (kv *simpleKV) getFileByID(idStr string) *dbfile.File {
-	kv.mu.RLock()
-	defer kv.mu.RUnlock()
-
 	idx := sort.Search(len(kv.files), func(i int) bool {
 		return kv.files[i].Name() >= idStr
 	})
@@ -137,17 +130,17 @@ func internalMustLoad(f *dbfile.File) {
 		switch e.Extra {
 		case dbfile.ExtraEnum_Delete:
 			indexer.Delete(strk)
-			delete(globalKV.expire, strk)
+			delete(globalKV.expireAt, strk)
 		case dbfile.ExtraEnum_Unknown:
-			expired := time.Now().Unix() >= int64(e.Expire)
-			if e.Expire == 0 { // no expire set
+			expired := time.Now().Unix() >= int64(e.ExpireAt)
+			if e.ExpireAt == 0 { // no expire set
 				indexer.Write(strk, index.MakeInode(offset, filename))
 			} else if !expired { // not expired
 				indexer.Write(strk, index.MakeInode(offset, filename))
-				globalKV.expire[strk] = e.Expire
+				globalKV.expireAt[strk] = e.ExpireAt
 			} else { // has expired
 				indexer.Delete(strk)
-				delete(globalKV.expire, strk)
+				delete(globalKV.expireAt, strk)
 			}
 		}
 	})
