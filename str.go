@@ -22,23 +22,22 @@ func checkExpire(expireAt uint32) bool {
 	return uint32(time.Now().Unix()) >= expireAt
 }
 
-// getExpiredAt with lock.
 func getExpiredAt(key string) (uint32, bool) {
-	val, ok := globalKV.expireAt[key]
+	val, ok := dataInstance.expireAt[key]
 	return val, ok
 }
 
 // tryDeleteCache deletes the cache if cache is not nil.
 func tryDeleteCache(key string) {
-	if globalKV.cache != nil {
-		globalKV.cache.Delete(key)
+	if dataInstance.cache != nil {
+		dataInstance.cache.Delete(key)
 	}
 }
 
 // delEntry deletes the expire map, cache and indexer with given key.
 func delEntry(key string) {
-	delete(globalKV.expireAt, key)
-	globalKV.indexer.Delete(key)
+	delete(dataInstance.expireAt, key)
+	dataInstance.indexer.Delete(key)
 	tryDeleteCache(key)
 }
 
@@ -50,20 +49,20 @@ func getVal(key string) (string, error) {
 	}
 
 	// try to get from cache
-	if globalKV.cache != nil {
-		val, ok := globalKV.cache.Load(key)
+	if dataInstance.cache != nil {
+		val, ok := dataInstance.cache.Load(key)
 		if ok {
 			return val.(string), nil
 		}
 	}
 
 	// cache miss, get index and lookup disk
-	inode, ok := globalKV.indexer.Read(key)
+	inode, ok := dataInstance.indexer.Read(key)
 	if !ok {
 		return "", config.ErrRecordNotFound
 	}
 
-	f := globalKV.getFileByID(inode.FileID)
+	f := dataInstance.getFileByID(inode.FileID)
 	if f == nil {
 		return "", config.ErrFileNotFound
 	}
@@ -76,38 +75,67 @@ func getVal(key string) (string, error) {
 	return string(e.Value), nil
 }
 
-// setVal writes entry to disk, set indexer and cache as well.
+// setValWithLock writes entry to disk, set indexer, cache, expiration as well.
+// Lock operation is contained in this method.
 // Notice that expire is represented in second.
-func setVal(key string, val string, expireAt uint32, extra dbfile.ExtraEnum) error {
+func setValWithLock(key string, val string, expireAt uint32, extra dbfile.ExtraEnum) error {
+
+	dataInstance.mu.Lock()
+	defer dataInstance.mu.Unlock()
+
+	// if this is a delete operation, pre-check whether the item exist.
+	if extra == dbfile.ExtraEnum_Delete && !internalExist(key) {
+		return nil
+	}
+	// if expireAt is zero, try to override expireAt.
+	if expireAt == 0 {
+		_expireAt, _ := getExpiredAt(key)
+		if !checkExpire(_expireAt) {
+			expireAt = _expireAt
+		}
+	}
 
 	// encode entry to stream
-	e := dbfile.NewEntryWithExpire(key, val, expireAt)
+	e := dbfile.NewEntryWithAll(key, val, expireAt, extra)
 	e.Extra = extra
-	stream := e.Encode()
 
-	// choose file
-	f := globalKV.getActiveFile()
-	if f.Offset()+int64(len(stream)) > config.BlockSize {
-		f = globalKV.appendNewFile()
-	}
-
-	// write to disk
-	curOffset := f.Offset()
-	if err := f.Write(e.Encode()); err != nil {
+	// using write proxy to handle data commit related problems.
+	infileOffsetBeforeWrite, whichFile, err := writeProxy(e)
+	if err != nil {
+		dataInstance.logger.Errorf("Failed to commit: %s", err.Error())
 		return err
 	}
-
-	// update index and cache
-	globalKV.indexer.Write(key, index.MakeInode(curOffset, f.Name()))
-	if globalKV.cache != nil {
-		globalKV.cache.Store(key, val)
-	}
+	applyEntry(e, infileOffsetBeforeWrite, whichFile)
 	return nil
+}
+
+func applyEntry(e dbfile.Entry, offsetBeforeWrite int64, whichFile *dbfile.File) {
+	// update index and cache
+	key := string(e.Key)
+	val := string(e.Value)
+	if e.Extra == dbfile.ExtraEnum_Unknown {
+		// Set
+		dataInstance.indexer.Write(key, index.MakeInode(offsetBeforeWrite, whichFile.Name()))
+		if dataInstance.cache != nil {
+			dataInstance.cache.Store(key, val)
+		}
+	} else {
+		// Delete
+		dataInstance.indexer.Delete(key)
+		if dataInstance.cache != nil {
+			dataInstance.cache.Delete(key)
+		}
+	}
+
+	// handle expire
+	if e.ExpireAt != 0 {
+		dataInstance.expireAt[key] = e.ExpireAt
+	}
 }
 
 // internalExist checks whether the key exist without lock.
 func internalExist(key string) bool {
-	_, ok := globalKV.indexer.Read(key)
+	_, ok := dataInstance.indexer.Read(key)
 	return ok
 }
 
@@ -118,7 +146,7 @@ func internalTTL(key string) (uint32, error) {
 	if !ok {
 		return 0, config.ErrRecordNotFound
 	}
-	if val, ok := globalKV.expireAt[key]; ok {
+	if val, ok := dataInstance.expireAt[key]; ok {
 		if diff := uint32(int64(val) - time.Now().Unix()); diff > 0 {
 			return diff, nil
 		}
@@ -129,8 +157,8 @@ func internalTTL(key string) (uint32, error) {
 // Expire set TTL of a KV entry.
 func Expire(key string, ttl int) error {
 
-	globalKV.mu.Lock()
-	defer globalKV.mu.Unlock()
+	dataInstance.mu.Lock()
+	defer dataInstance.mu.Unlock()
 
 	val, err := getVal(key)
 	if err != nil {
@@ -138,78 +166,53 @@ func Expire(key string, ttl int) error {
 	}
 
 	// calc expireAt
-	var expireAt uint32
-	var hadSetExpire bool
-	if ttl != 0 {
-		expireAt = uint32(time.Now().Unix()) + uint32(ttl)
-	} else {
-		expireAt, hadSetExpire = getExpiredAt(key)
-		if hadSetExpire && checkExpire(expireAt) {
-			expireAt = 0
-		}
-	}
+	expireAt := uint32(time.Now().Unix()) + uint32(ttl)
+
+	// var expireAt uint32
+	// var hadSetExpire bool
+	// if ttl != 0 {
+	// 	expireAt = uint32(time.Now().Unix()) + uint32(ttl)
+	// } else {
+	// 	expireAt, hadSetExpire = getExpiredAt(key)
+	// 	if hadSetExpire && checkExpire(expireAt) {
+	// 		expireAt = 0
+	// 	}
+	// }
 
 	// write an expire record
-	if err := setVal(key, val, expireAt, dbfile.ExtraEnum_Unknown); err != nil {
-		return err
-	}
+	return setValWithLock(key, val, expireAt, dbfile.ExtraEnum_Unknown)
 
 	// update expireAt
-	if ttl != 0 {
-		globalKV.expireAt[key] = expireAt
-	} else if hadSetExpire && expireAt == 0 {
-		delete(globalKV.expireAt, key) // had set expireAt but has already expired.
-	}
-
-	return nil
+	// if ttl != 0 {
+	// 	dataInstance.expireAt[key] = expireAt
+	// } else if hadSetExpire && expireAt == 0 {
+	// 	delete(dataInstance.expireAt, key) // had set expireAt but has already expired.
+	// }
 }
 
 func Exist(key string) bool {
-	globalKV.mu.RLock()
-	defer globalKV.mu.RUnlock()
+	dataInstance.mu.RLock()
+	defer dataInstance.mu.RUnlock()
 	return internalExist(key)
 }
 
 func TTL(key string) (uint32, error) {
-	globalKV.mu.RLock()
-	defer globalKV.mu.RUnlock()
+	dataInstance.mu.RLock()
+	defer dataInstance.mu.RUnlock()
 	return internalTTL(key)
 }
 
 func Get(key string) (string, error) {
-	globalKV.mu.RLock()
-	defer globalKV.mu.RUnlock()
+	dataInstance.mu.RLock()
+	defer dataInstance.mu.RUnlock()
 	return getVal(key)
 }
 
 // Write writes to the disk file and then update the index and the cache.
 func Write(key string, value string) error {
-	globalKV.mu.Lock()
-	defer globalKV.mu.Unlock()
-	return setVal(key, value, 0, dbfile.ExtraEnum_Unknown)
+	return setValWithLock(key, value, 0, dbfile.ExtraEnum_Unknown)
 }
 
 func Delete(key string) error {
-	globalKV.mu.Lock()
-	defer globalKV.mu.Unlock()
-
-	if err := setVal(key, "", 0, dbfile.ExtraEnum_Delete); err != nil {
-		return err
-	}
-
-	// write disk
-	f := globalKV.getActiveFile()
-	e := dbfile.NewEntry(key, "")
-	e.SetDelete()
-	if err := f.Write(e.Encode()); err != nil {
-		return err
-	}
-
-	// delete index and cache
-	globalKV.indexer.Delete(key)
-	if globalKV.cache != nil {
-		globalKV.cache.Delete(key)
-	}
-
-	return nil
+	return setValWithLock(key, "", 0, dbfile.ExtraEnum_Delete)
 }

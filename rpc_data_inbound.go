@@ -1,11 +1,10 @@
-package main
+package simplekv
 
 import (
 	"context"
 	"fmt"
 
-	"github.com/galaxyzeta/simplekv"
-	"github.com/galaxyzeta/simplekv/service/proto"
+	"github.com/galaxyzeta/simplekv/proto"
 )
 
 type SimplekvService struct{}
@@ -24,12 +23,13 @@ func getSuccessResponseParam(param string) *proto.BaseResponse {
 
 func getErrorResponse(err string) *proto.BaseResponse {
 	return &proto.BaseResponse{
-		Err: err,
+		Code: 1,
+		Msg:  err,
 	}
 }
 
 func (*SimplekvService) Get(ctx context.Context, req *proto.GetRequest) (*proto.BaseResponse, error) {
-	val, err := simplekv.Get(req.Key)
+	val, err := Get(req.Key)
 	if err != nil {
 		return getErrorResponse(err.Error()), nil
 	}
@@ -37,7 +37,7 @@ func (*SimplekvService) Get(ctx context.Context, req *proto.GetRequest) (*proto.
 }
 
 func (*SimplekvService) Set(ctx context.Context, req *proto.SetRequest) (*proto.BaseResponse, error) {
-	err := simplekv.Write(req.Key, req.Value)
+	err := Write(req.Key, req.Value)
 	if err != nil {
 		return getErrorResponse(err.Error()), nil
 	}
@@ -45,7 +45,7 @@ func (*SimplekvService) Set(ctx context.Context, req *proto.SetRequest) (*proto.
 }
 
 func (*SimplekvService) Del(ctx context.Context, req *proto.DelRequest) (*proto.BaseResponse, error) {
-	err := simplekv.Delete(req.Key)
+	err := Delete(req.Key)
 	if err != nil {
 		return getErrorResponse(err.Error()), nil
 	}
@@ -53,7 +53,7 @@ func (*SimplekvService) Del(ctx context.Context, req *proto.DelRequest) (*proto.
 }
 
 func (*SimplekvService) Expire(ctx context.Context, req *proto.ExpireRequest) (*proto.BaseResponse, error) {
-	err := simplekv.Expire(req.Key, int(req.Ttl))
+	err := Expire(req.Key, int(req.Ttl))
 	if err != nil {
 		return getErrorResponse(err.Error()), nil
 	}
@@ -61,7 +61,7 @@ func (*SimplekvService) Expire(ctx context.Context, req *proto.ExpireRequest) (*
 }
 
 func (*SimplekvService) TTL(ctx context.Context, req *proto.TTLRequest) (*proto.BaseResponse, error) {
-	ttl, err := simplekv.TTL(req.Key)
+	ttl, err := TTL(req.Key)
 	if err != nil {
 		return getErrorResponse(err.Error()), nil
 	}

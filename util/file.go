@@ -27,3 +27,19 @@ func ExtractFileName(path string) string {
 	tmp := strings.Split(path, "/")
 	return tmp[len(tmp)-1]
 }
+
+func MustOpenFileAppend(path string) *os.File {
+	fp, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_RDONLY, 0644)
+	if err != nil {
+		panic(err)
+	}
+	return fp
+}
+
+func MustOpenFileRndRW(path string) *os.File {
+	fp, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0644)
+	if err != nil {
+		panic(err)
+	}
+	return fp
+}

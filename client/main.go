@@ -3,14 +3,13 @@ package main
 import (
 	"bufio"
 	"context"
+	"flag"
 	"fmt"
 	"os"
 	"strings"
 
 	"github.com/galaxyzeta/simplekv/config"
-	"github.com/galaxyzeta/simplekv/service/proto"
 	"github.com/galaxyzeta/simplekv/util"
-	"google.golang.org/grpc"
 )
 
 type clientHandler func(ctx context.Context, params ...string) (string, error)
@@ -22,30 +21,24 @@ var handlerRegistry = map[string]clientHandler{
 	"expire": Expire,
 	"ttl":    TTL,
 }
-
-var grpcClient proto.SimpleKVClient
+var condHasLeader = util.NewConditionBlocker(func() bool { return currentLeaderHostport() != "" })
 
 func main() {
 
-	// TODO implement routing method
+	flag.String("cfg", "", "configuration file")
+	flag.Parse()
+	initCfg("")
 
-	addr := "localhost:9999" // TODO read from config files
+	zkMustInit()
 
-	conn, err := grpc.Dial(addr, grpc.WithInsecure()) // TODO security
-	if err != nil {
-		panic(err)
-	}
-	defer conn.Close()
-	grpcClient = proto.NewSimpleKVClient(conn)
-
+	fmt.Println("info: waiting for an available leader...")
+	go monitorCurrentLeader()
 	sc := bufio.NewScanner(os.Stdin) // use scanner to read line by line.
 	for {
-		fmt.Printf("[%s] > ", addr)
+		condHasLeader.LoopWaitUntilTrue()
+		fmt.Printf("[%s] > ", currentLeaderHostport())
 		sc.Scan()
 		input := sc.Text()
-		if err != nil {
-			panic(err)
-		}
 		fmt.Println(handleInput(input))
 	}
 }

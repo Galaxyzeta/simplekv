@@ -15,16 +15,16 @@ func TestByteUintConvert(t *testing.T) {
 }
 
 func TestEntryEncode(t *testing.T) {
+	// TODO rewrite
 	// encode
-	e := NewEntry("hello", "world")
+	e := NewEntryWithAll("hello", "world", 0, ExtraEnum_Delete)
 
-	e.SetDelete()
 	assert.Equal(t, ExtraEnum_Delete, e.Extra)
 
 	ret := e.Encode()
 
 	// decode
-	e = decodeEntry(ret)
+	e = Decode(ret)
 	assert.Equal(t, uint8(5), e.KLen)
 	assert.Equal(t, uint32(5), e.VLen)
 	assert.Equal(t, uint32(0), e.ExpireAt)

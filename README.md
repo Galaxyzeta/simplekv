@@ -19,6 +19,10 @@ Here are some basic requirements:
   - [x] Del
 - [x] Appendonly log as disk storage with Bitcask theory.
 - [ ] Master-slave replication.
+  - [ ] Controller election.
+  - [ ] Leader election by comparing offsets.
+  - [ ] Log replication.
+  - [ ] Redirect manager to redirect writing operation to leader.
 - [ ] Using zookeeper/etcd as service registration, leader election, etc.
 - [ ] Client-side router cache and load balance.
 - [ ] Using GRPC and singleflight mechanism to optimize traffic.

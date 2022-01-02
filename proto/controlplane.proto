@@ -1,0 +1,48 @@
+syntax = "proto3";
+package proto;
+
+import "proto/base.proto";
+
+option go_package = "/proto";
+
+service ControlPlaneService {
+	rpc FetchLog(FetchLogRequest) returns (FetchLogResponse) {};
+	rpc RoleChange(RoleChangeRequest) returns (RoleChangeResponse) {};
+	rpc CollectOffset(CollectOffsetRequest) returns (CollectOffsetResponse) {};
+	rpc CollectWatermark(CollectWatermarkRequest) returns (CollectWatermarkResponse) {};
+}
+
+enum ServerRole {
+	follower = 0;
+	leader = 1;
+}
+
+message FetchLogRequest {
+	string callerNodeName = 1;
+	int64 offsetFrom  = 2;
+	int64 count = 3;
+}
+message FetchLogResponse {
+	repeated bytes data = 1;
+	int64 leaderHw = 2;
+	BaseResponse baseResp = 255;
+}
+
+message RoleChangeRequest {
+	ServerRole role = 1;
+}
+message RoleChangeResponse {
+	BaseResponse baseResp = 255;
+}
+
+message CollectOffsetRequest {}
+message CollectOffsetResponse {
+	int64 offset = 1;
+	BaseResponse baseResp = 255;
+}
+
+message CollectWatermarkRequest {}
+message CollectWatermarkResponse {
+	int64 hwm = 1;
+	BaseResponse baseResp = 255;
+}

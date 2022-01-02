@@ -1,7 +1,9 @@
 syntax = "proto3";
 package proto;
 
-option go_package = "service/proto";
+import "proto/base.proto";
+
+option go_package = "/proto";
 
 service SimpleKV {
 	rpc Get(GetRequest) returns (BaseResponse){};
@@ -9,11 +11,6 @@ service SimpleKV {
 	rpc Del(DelRequest) returns (BaseResponse){};
 	rpc Expire(ExpireRequest) returns (BaseResponse){};
 	rpc TTL(TTLRequest) returns (BaseResponse){};
-}
-
-message BaseResponse {
-	string msg = 1;
-	string err = 2;
 }
 
 message GetRequest {

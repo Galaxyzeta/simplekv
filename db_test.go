@@ -2,26 +2,27 @@ package simplekv
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"strconv"
 	"testing"
 	"time"
 
 	"github.com/galaxyzeta/simplekv/config"
+	"github.com/galaxyzeta/simplekv/dbfile"
 	"github.com/stretchr/testify/assert"
 )
 
 // delete the db data file folder before each test.
-func deleteFolder() {
-	err := os.RemoveAll(config.DBDir)
+func testDeleteFolder() {
+	err := os.RemoveAll(config.DataDir)
 	if err != nil {
 		panic(err)
 	}
 }
 
 func TestBasicIO(t *testing.T) {
-	deleteFolder()
-	MustLoad()
+	testBootServer()
 
 	err := Write("hello", "world")
 	assert.NoError(t, err)
@@ -42,10 +43,11 @@ func TestBasicIO(t *testing.T) {
 
 	_, err = Get("hello")
 	assert.ErrorIs(t, err, config.ErrRecordNotFound)
+
+	testStopServer()
 }
 
 func TestLoadTwice(t *testing.T) {
-	deleteFolder()
 
 	var writeNoErr = func(k, v string) {
 		err := Write(k, v)
@@ -57,7 +59,7 @@ func TestLoadTwice(t *testing.T) {
 		assert.NoError(t, err)
 	}
 
-	MustLoad()
+	testBootServer()
 
 	writeNoErr("hello", "world")
 	expireNoErr("hello", 1)
@@ -69,16 +71,16 @@ func TestLoadTwice(t *testing.T) {
 	assert.ErrorIs(t, err, config.ErrRecordExpired)
 	assert.Equal(t, "", v)
 
-	MustLoad()
+	testRestartDataPlane()
 
 	v, err = Get("hello")
 	assert.ErrorIs(t, err, config.ErrRecordNotFound)
 	assert.Equal(t, "", v)
+
+	testStopServer()
 }
 
 func TestExpire(t *testing.T) {
-	deleteFolder()
-	MustLoad()
 
 	var writeNoErr = func(k, v string) {
 		err := Write(k, v)
@@ -91,6 +93,8 @@ func TestExpire(t *testing.T) {
 	}
 
 	const setTTL = 2
+
+	testBootServer()
 
 	writeNoErr("hello", "world")
 
@@ -121,7 +125,7 @@ func TestExpire(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NotNil(t, val)
 
-	MustLoad()
+	testRestartDataPlane()
 
 	// after reload, expire time should be the same as the one before load
 
@@ -145,12 +149,14 @@ func TestExpire(t *testing.T) {
 	assert.ErrorIs(t, err, config.ErrRecordNotFound)
 	assert.Equal(t, "", val)
 
+	testStopServer()
+
 }
 
 func TestMultipleFiles(t *testing.T) {
-	config.BlockSize = 64
-	deleteFolder()
-	MustLoad()
+	config.DataBlockSize = 64
+
+	testBootServer()
 
 	getKey := func(i int) string {
 		return fmt.Sprintf("simpledb:testkey:%d", i)
@@ -174,6 +180,76 @@ func TestMultipleFiles(t *testing.T) {
 	}
 
 	readCheck()
-	MustLoad()
+	testRestartDataPlane()
 	readCheck()
+
+	testStopServer()
+}
+
+func TestReadEntries(t *testing.T) {
+	testBootServer()
+
+	getKey := func(i int) string {
+		return fmt.Sprintf("simpledb:testkey:%d", i)
+	}
+	getVal := func(i int) string {
+		return strconv.FormatInt(int64(i), 10)
+	}
+
+	const keyCnt = 10
+
+	for i := 0; i < keyCnt; i++ {
+		Write(getKey(i), getVal(i))
+	}
+
+	timerRecorder := time.Now()
+	var timeElapsed = func() {
+		t.Log("time elapsed = ", time.Since(timerRecorder).Microseconds(), "us")
+		timerRecorder = time.Now()
+	}
+
+	// case 1: Normal read from start.
+	entriesRaw, err := dataInstance.readEntries(0, 10)
+	timeElapsed()
+	assert.NoError(t, err)
+	assert.Len(t, entriesRaw, 10)
+	for i, eachEntryRaw := range entriesRaw {
+		e := dbfile.Decode(eachEntryRaw)
+		assert.Equal(t, getVal(i), string(e.Value))
+	}
+
+	// case 2: Read an infinite count of entries from start.
+	entriesRaw, err = dataInstance.readEntries(0, 1000000)
+	timeElapsed()
+	assert.ErrorIs(t, err, io.EOF)
+	assert.Len(t, entriesRaw, 10)
+	for i, eachEntryRaw := range entriesRaw {
+		e := dbfile.Decode(eachEntryRaw)
+		assert.Equal(t, getVal(i), string(e.Value))
+	}
+
+	// case 3: Random read will cause broken data.
+	_, err = dataInstance.readEntries(232, 5)
+	timeElapsed()
+	assert.ErrorIs(t, err, config.ErrBrokenData)
+
+	// case 4: Read not exist entries.
+	entriesRaw, err = dataInstance.readEntries(99999, 10)
+	timeElapsed()
+	assert.ErrorIs(t, err, config.ErrFileNotFound)
+	assert.Len(t, entriesRaw, 0)
+
+	// case 5: Normal read from middle with a limited count assigned.
+	entriesRaw, err = dataInstance.readEntries(36, 1) // the single size of an entry in this test is 36.
+	timeElapsed()
+	assert.NoError(t, err)
+	assert.Len(t, entriesRaw, 1)
+
+	// case 6: Read 0 entry from a random position.
+	entriesRaw, err = dataInstance.readEntries(56, 0)
+	timeElapsed()
+	assert.NoError(t, err)
+	assert.Len(t, entriesRaw, 0)
+
+	testStopServer()
 }

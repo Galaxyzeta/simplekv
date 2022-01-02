@@ -1,0 +1,32 @@
+data:
+  blocksize: 64
+  dir: tmp/node02
+net:
+  dataport: 2229
+  ctrlport: 2228
+zk:
+  servers:
+    - 127.0.0.1:2181
+  sessionTimeout: 5
+  nodeNotExistBackoff: 1000
+retry:
+  backoff: 50
+  count: 5
+cluster:
+  nodeName: node02
+  node2Hostports:
+    node01: 127.0.0.1:1118
+    node02: 127.0.0.1:2228
+    node03: 127.0.0.1:3338
+replication:
+  isr:
+    maxCatchUpTime: 500
+    maxNoFetchTime: 250
+    maxDelayCount: 20
+  logFetchInterval: 50
+commit:
+  initQueueSize: 1024
+  requiredAcks: 2
+  timeout: 30000
+log:
+  output: tmp/.log
