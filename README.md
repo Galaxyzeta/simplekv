@@ -4,7 +4,7 @@ A simple distributed key-value storage system based on bitcask from scratch.
 
 ## Roadmap
 
-Progress: 🟦🟦◻️◻️◻️◻️◻️◻️◻️◻️
+Progress: 🟦🟦🟦🟦🟦◻️◻️◻️◻️◻️
 
 Here are some basic requirements:
 
@@ -18,16 +18,13 @@ Here are some basic requirements:
   - [x] Expire
   - [x] Del
 - [x] Appendonly log as disk storage with Bitcask theory.
-- [ ] Master-slave replication.
-  - [ ] Controller election.
-  - [ ] Leader election by comparing offsets.
-  - [ ] Log replication.
-  - [ ] Redirect manager to redirect writing operation to leader.
-- [ ] Using zookeeper/etcd as service registration, leader election, etc.
-- [ ] Client-side router cache and load balance.
-- [ ] Using GRPC and singleflight mechanism to optimize traffic.
-  - [x] GRPC
-  - [ ] Singleflight
+- [x] Master-slave replication.
+  - [x] Controller election.
+  - [x] Leader election by comparing offsets.
+  - [x] Log replication.
+  - [x] ISR management.
+- [x] Using zookeeper/etcd as service registration, leader election, etc.
+- [x] Using GRPC to communicate between client-server and server-server.
 - [ ] Using Docker to put all stuff together.
 
 Advanced requirements:
@@ -46,3 +43,5 @@ Some projects I've studied which inspired this project.
 - groupcache: distributed cache system using consistent hash + singleflight.
 - secret project A: a distributed kv system based on storage unit consists of rocksdb + LRU cache, using hashslot to achieve distributed storage and elastic expansion.
 - bitcask paper: https://riak.com/assets/bitcask-intro.pdf
+- kafka: a famous, widely used industrial distributed message queue.
+- distributed system design patterns: https://github.com/dreamhead/patterns-of-distributed-systems
