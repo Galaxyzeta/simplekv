@@ -12,6 +12,10 @@ import (
 
 var connections map[string]proto.SimpleKVClient = make(map[string]proto.SimpleKVClient)
 
+func Client() {
+
+}
+
 // client returns the client that corresponding to current leader hostport.
 // If doesn't exist, will create one and add it to the cache.
 func client() (proto.SimpleKVClient, error) {

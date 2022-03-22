@@ -4,6 +4,8 @@ import (
 	"time"
 )
 
+// RetryWithMaxCount retries the function until no error was returned for max attempt count.
+// The fn parameter returns two values, the boolean one means should we keep retry, the error is self-explained.
 func RetryWithMaxCount(fn func() (bool, error), attempt int) error {
 	for {
 		shouldRetry, err := fn()
@@ -22,7 +24,7 @@ func RetryWithMaxCount(fn func() (bool, error), attempt int) error {
 	}
 }
 
-func RetryInfinite(fn func() error, retryBackoff time.Duration) error {
+func RetryInfinite(fn func() error, retryBackoff time.Duration) {
 	for {
 		if err := fn(); err != nil {
 			time.Sleep(retryBackoff)
@@ -30,7 +32,6 @@ func RetryInfinite(fn func() error, retryBackoff time.Duration) error {
 		}
 		break
 	}
-	return nil
 }
 
 func MustDo(fn func() error) {

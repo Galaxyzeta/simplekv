@@ -18,12 +18,21 @@ import (
 var _dataplaneServer *grpc.Server
 var _controlPlaneServer *grpc.Server
 
+var serverStopNotifier chan struct{} = make(chan struct{}, 1)
+
 // Run is the entry point of a SimpleKV server.
-func Run(afterLoadingConfig func()) {
-	// TODO tune config
-	flag.String("cfg", "conf/standalone/server-standalone.yaml", "configuration file")
-	flag.Parse()
-	// TODO add warning about flag not set
+func Run(afterLoadingConfig func(), cfgPath string, needParseFlag bool) {
+
+	var mainLogger = util.NewLogger("[Main]", config.LogOutputWriter)
+
+	if needParseFlag {
+		if cfgPath == "" {
+			cfgPath = "conf/standalone/server-standalone.yaml"
+		}
+		flag.String("cfg", cfgPath, "configuration file")
+		flag.Parse()
+	}
+
 	config.InitCfg("")
 	if afterLoadingConfig != nil {
 		afterLoadingConfig() // to override configs for testings purpose.
@@ -33,7 +42,6 @@ func Run(afterLoadingConfig func()) {
 	var controlPlaneServerIpport = fmt.Sprintf("localhost:%d", config.NetControlPort)
 	var wg = sync.WaitGroup{}
 	var signalTerminationChannel = make(chan os.Signal, 2)
-	var mainLogger = util.NewLogger("[Main]", config.LogOutputWriter)
 
 	// This is used to block data serving to users util all stuff has been set up.
 	var condStartServingData = util.NewConditionBlocker(func() bool { return false })
@@ -80,14 +88,14 @@ func Run(afterLoadingConfig func()) {
 	}
 
 	// monitor user termination signal to gracefully stop the servers.
+	// This goroutine will not be waited when shutting down server.
 	var sigkillMonitor = func() {
-		defer wg.Done()
 		signal.Notify(chan<- os.Signal(signalTerminationChannel), syscall.SIGINT, syscall.SIGTERM)
 		for sig := range signalTerminationChannel {
 			switch sig {
 			case syscall.SIGINT, syscall.SIGTERM:
 				mainLogger.Infof("Termination signal captured: Signal<%v>. Starting to terminate all goroutines.", sig)
-				GracefulStop()
+				ShutdownServerGracefully(false)
 				mainLogger.Infof("All services has been terminated, exiting...")
 				return // terminated, trigger wg.Done and breakout.
 			}
@@ -105,8 +113,7 @@ func Run(afterLoadingConfig func()) {
 		}
 	}
 
-	// TODO consider graceful shutdown for goroutines running on control plane.
-	wg.Add(3)
+	wg.Add(2) // Wait until dataPlaneServer and controlPlaneServer both got shutted down.
 	zkMustInit()
 	initControlPlaneSingleton()
 	initDataPlaneSingleton()
@@ -120,9 +127,20 @@ func Run(afterLoadingConfig func()) {
 	wg.Wait()
 
 	// system exited normally.
+	serverStopNotifier <- struct{}{}
+	mainLogger.Infof("System exited OK !")
 }
 
-func GracefulStop() {
+// Shutdown the server gracefully. Will not wait until the server really stops.
+func ShutdownServerGracefully(blockUntilClose bool) {
+	fmt.Println(">>>> System shutdown command got detected !")
 	_dataplaneServer.GracefulStop()
 	_controlPlaneServer.GracefulStop()
+	dataInstance.shutdownGracefully()
+	ctrlInstance.ShutdownGracefully()
+	if blockUntilClose {
+		<-serverStopNotifier
+	}
+	zkMustShutdown()
+	fmt.Println(">>>> System exited OK !")
 }

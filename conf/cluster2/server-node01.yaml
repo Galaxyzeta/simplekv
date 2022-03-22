@@ -1,5 +1,5 @@
 data:
-  blocksize: 64
+  blocksize: 10240
   dir: tmp/node01
 net:
   dataport: 6669
@@ -7,7 +7,7 @@ net:
 zk:
   servers:
     - 127.0.0.1:2181
-  sessionTimeout: 5000
+  sessionTimeout: 3000
   nodeNotExistBackoff: 1000
 retry:
   backoff: 500
@@ -20,14 +20,15 @@ cluster:
 replication:
   isr:
     maxCatchUpTime: 500
-    maxNoFetchTime: 250
+    maxNoFetchTime: 1000
     maxDelayCount: 20
+    updateInterval: 1000
   logFetchInterval: 50
   logDelayerTimeout: 500
 commit:
   initQueueSize: 1024
   requiredAcks: 2
-  timeout: 30000
+  timeout: 2000
 election:
   leaderTimeout: 1000
 log:

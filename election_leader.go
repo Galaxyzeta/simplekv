@@ -46,15 +46,6 @@ func (em *leaderElectionManager) setElecting(val bool) {
 	em.isListeningElection.Store(val)
 }
 
-func (em *leaderElectionManager) onReceiveRoleChangeRequest(role proto.ServerRole) (result bool) {
-	ctrlInstance.cmdExecutor.enqueueAndWait_ReceiveRoleChangeRequest(role, &result)
-	return
-}
-
-func (em *leaderElectionManager) onReceiveOffsetCollectRequest() {
-	ctrlInstance.cmdExecutor.enqueueAndWait_ReceiveCollectOffsetRequest()
-}
-
 // onReceiveOffsetCollectRequest will begin a electing process.
 func (em *leaderElectionManager) handleReceiveOffsetCollectRequest() {
 	if !em.isElecting() { // There's no election, initiate an election.
@@ -109,7 +100,7 @@ func (em *leaderElectionManager) runElectionOnce() {
 	// Take a snapshot of online hostports. Assume they're still online inside the loop.
 	var onlineHostports = ctrlInstance.getOnlineHostports()
 	// Get a copy of ISR
-	var isrSet = ctrlInstance.replicationManager.cloneIsrSet(true)
+	var isrSet = util.StringList2Set(ctrlInstance.replicationManager.cloneIsrList(true))
 	var shouldConsiderIsr = len(isrSet) == 0 // if isr is empty, do not take isr into consideration.
 	// Collecting other node's offset.
 	var hostportAndOffsetList = make([]hostportAndOffset, 0, len(onlineHostports))
@@ -231,7 +222,7 @@ func (em *leaderElectionManager) runElectionHost() {
 		em.logger.Infof("Current onlineHostports: %v", onlineHostports)
 
 		// Get a copy of ISR
-		var isrSet = ctrlInstance.replicationManager.cloneIsrSet(true)
+		var isrSet = util.StringList2Set(ctrlInstance.replicationManager.cloneIsrList(true))
 		var shouldConsiderIsr = len(isrSet) == 0 // if isr is empty, do not take isr into consideration.
 
 		// Collecting other node's offset.

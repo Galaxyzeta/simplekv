@@ -3,31 +3,32 @@ package simplekv
 import (
 	"context"
 	"fmt"
-	"sync"
 
 	"github.com/galaxyzeta/simplekv/config"
+	"github.com/galaxyzeta/simplekv/dbfile"
 	"github.com/galaxyzeta/simplekv/proto"
 	"google.golang.org/grpc"
 )
 
 type controlPlaneRpcManager struct {
-	controlPlaneClients sync.Map
+	controlPlaneClients map[string]proto.ControlPlaneServiceClient // readonly after init
 }
 
 func newControlPlaneRpcManager(hostports []string) *controlPlaneRpcManager {
 	rpcManager := controlPlaneRpcManager{}
+	rpcManager.controlPlaneClients = make(map[string]proto.ControlPlaneServiceClient)
 	for _, hostport := range hostports {
 		conn, err := grpc.Dial(hostport, grpc.WithInsecure()) // TODO safety
 		if err != nil {
 			panic(err)
 		}
-		rpcManager.controlPlaneClients.Store(hostport, proto.NewControlPlaneServiceClient(conn))
+		rpcManager.controlPlaneClients[hostport] = proto.NewControlPlaneServiceClient(conn)
 	}
 	return &rpcManager
 }
 
 func (c *controlPlaneRpcManager) client(hostport string) (proto.ControlPlaneServiceClient, error) {
-	client, ok := c.controlPlaneClients.Load(hostport)
+	client, ok := c.controlPlaneClients[hostport]
 	if !ok {
 		return nil, config.ErrRecordNotFound
 	}
@@ -104,4 +105,23 @@ func (c *controlPlaneRpcManager) collectWatermark(ctx context.Context, hostport 
 		return 0, err
 	}
 	return resp.GetHwm(), nil
+}
+
+func (c *controlPlaneRpcManager) collectLeaderEpochOffset(ctx context.Context, hostport string, myLeaderEpoch int64) (dbfile.LeaderEpochAndOffset, error) {
+	cli, err := c.client(hostport)
+	if err != nil {
+		return dbfile.LeaderEpochAndOffset{}, err
+	}
+	resp, err := cli.CollectLeaderEpochAndOffset(ctx, &proto.CollectLeaderEpochAndOffsetRequest{
+		MyLeaderEpoch: myLeaderEpoch,
+	})
+	if err != nil {
+		return dbfile.LeaderEpochAndOffset{}, err
+	} else if err = c._handleBaseResp(resp.BaseResp); err != nil {
+		return dbfile.LeaderEpochAndOffset{}, err
+	}
+	return dbfile.LeaderEpochAndOffset{
+		LeaderEpoch: resp.LeaderEpoch,
+		Offset:      resp.Offset,
+	}, nil
 }

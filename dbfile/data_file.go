@@ -22,14 +22,18 @@ const (
 	ExtraEnum_Delete
 )
 
+// headerLength is the length of entry excludes its key and value.
+const headerLength = 21
+
 type Entry struct {
-	Checksum uint32
-	KLen     uint32
-	VLen     uint32
-	ExpireAt uint32
-	Extra    ExtraEnum
-	Key      []byte
-	Value    []byte
+	Checksum    uint32
+	LeaderEpoch uint32
+	KLen        uint32
+	VLen        uint32
+	ExpireAt    uint32
+	Extra       ExtraEnum
+	Key         []byte
+	Value       []byte
 }
 
 type File struct {
@@ -111,7 +115,7 @@ func readSingleEntryAt(fp *os.File, offset int64) (e Entry, err error) {
 
 // readSingleEntry from file, will report if there's an broken data.
 func readSingleEntry(fp *os.File) (e Entry, err error) {
-	buffer := make([]byte, 17)
+	buffer := make([]byte, headerLength)
 	if _, err = fp.Read(buffer); err != nil {
 		return
 	}
@@ -135,8 +139,9 @@ func readSingleEntry(fp *os.File) (e Entry, err error) {
 	return
 }
 
-func NewEntry(key string, value string) (e Entry) {
+func NewEntry(key string, value string, leaderEpoch int64) (e Entry) {
 	// TODO: validate key and value length
+	e.LeaderEpoch = uint32(leaderEpoch)
 	e.KLen = uint32(len(key))
 	e.VLen = uint32(len(value))
 	e.Key = []byte(key)
@@ -145,7 +150,8 @@ func NewEntry(key string, value string) (e Entry) {
 	return
 }
 
-func NewEntryWithAll(key string, value string, expireAt uint32, extra ExtraEnum) (e Entry) {
+func NewEntryWithAll(key string, value string, leaderEpoch uint32, expireAt uint32, extra ExtraEnum) (e Entry) {
+	e.LeaderEpoch = leaderEpoch
 	e.KLen = uint32(len(key))
 	e.VLen = uint32(len(value))
 	e.Key = []byte(key)
@@ -167,11 +173,21 @@ func (e Entry) Validate() bool {
 	return true
 }
 
-func (e Entry) calcChecksum() []byte {
+// Warning: after hashing a lot of data, a panic which says d.nx != 0 will throw.
+func (e Entry) calcChecksum() (ret []byte) {
+	defer func() {
+		k := recover()
+		if k != nil {
+			fmt.Println("!!!!!!!!!!!!!!! Md5 HASH Bug detected !!!!!!!!!!!!!!!!")
+			md5Hasher = md5.New()
+			ret = e.calcChecksum()
+		}
+	}()
 	md5Hasher.Write(e.Encode()[4:])
 	val := md5Hasher.Sum(nil)
 	md5Hasher.Reset()
-	return val[len(val)-4:]
+	ret = val[len(val)-4:]
+	return
 }
 
 func (e Entry) Encode() (ret []byte) {
@@ -181,37 +197,39 @@ func (e Entry) Encode() (ret []byte) {
 	ret = make([]byte, totalLen)
 
 	copy(ret[0:4], util.Uint32ToBytes(e.Checksum))
-	copy(ret[4:8], util.Uint32ToBytes(e.KLen))
-	copy(ret[8:12], util.Uint32ToBytes(e.VLen))
-	copy(ret[12:16], util.Uint32ToBytes(e.ExpireAt))
-	ret[16] = uint8(e.Extra)
+	copy(ret[4:8], util.Uint32ToBytes(e.LeaderEpoch))
+	copy(ret[8:12], util.Uint32ToBytes(e.KLen))
+	copy(ret[12:16], util.Uint32ToBytes(e.VLen))
+	copy(ret[16:20], util.Uint32ToBytes(e.ExpireAt))
+	ret[20] = uint8(e.Extra)
 
-	pos := 17 + klenInt
-	copy(ret[17:pos], e.Key)
+	pos := headerLength + klenInt
+	copy(ret[headerLength:pos], e.Key)
 	copy(ret[pos:pos+vlenInt], e.Value)
 
 	return
 }
 
 func (e Entry) Size() int64 {
-	totalLen := int64(e.KLen) + int64(e.VLen) + 17
+	totalLen := int64(e.KLen) + int64(e.VLen) + headerLength
 	return totalLen
 }
 
 func Decode(ret []byte) (e Entry) {
 	e = decodeHeader(ret)
-	pos := 17 + int(e.KLen)
-	e.Key = ret[17:pos]
+	pos := headerLength + int(e.KLen)
+	e.Key = ret[headerLength:pos]
 	e.Value = ret[pos : pos+int(e.VLen)]
 	return e
 }
 
 func decodeHeader(ret []byte) (e Entry) {
 	e.Checksum = util.Bytes2Uint32(ret[0:4])
-	e.KLen = util.Bytes2Uint32(ret[4:8])
-	e.VLen = util.Bytes2Uint32(ret[8:12])
-	e.ExpireAt = util.Bytes2Uint32(ret[12:16])
-	e.Extra = ExtraEnum(ret[16])
+	e.LeaderEpoch = util.Bytes2Uint32(ret[4:8])
+	e.KLen = util.Bytes2Uint32(ret[8:12])
+	e.VLen = util.Bytes2Uint32(ret[12:16])
+	e.ExpireAt = util.Bytes2Uint32(ret[16:20])
+	e.Extra = ExtraEnum(ret[20])
 	return e
 }
 

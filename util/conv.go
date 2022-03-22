@@ -1,6 +1,8 @@
 package util
 
-import "strings"
+import (
+	"strings"
+)
 
 func Uint32ToBytes(a uint32) (ret []byte) {
 	ret = make([]byte, 4)
@@ -53,14 +55,6 @@ func StringList2Set(li []string) (set map[string]struct{}) {
 	set = make(map[string]struct{}, len(li))
 	for _, eachStr := range li {
 		set[eachStr] = struct{}{}
-	}
-	return
-}
-
-func CloneStringSet(src map[string]struct{}) (set map[string]struct{}) {
-	set = make(map[string]struct{}, len(src))
-	for k := range src {
-		set[k] = struct{}{}
 	}
 	return
 }

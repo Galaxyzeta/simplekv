@@ -7,7 +7,7 @@ net:
 zk:
   servers:
     - 127.0.0.1:2181
-  sessionTimeout: 60000
+  sessionTimeout: 3000
   nodeNotExistBackoff: 1000
 retry:
   backoff: 50
@@ -21,6 +21,7 @@ replication:
     maxCatchUpTime: 500
     maxNoFetchTime: 250
     maxDelayCount: 20
+    updateInterval: 1000
   logFetchInterval: 50
   logDelayerTimeout: 500
 commit:
@@ -29,5 +30,3 @@ commit:
   timeout: 30000
 election:
   leaderTimeout: 1000
-log:
-  output: stdout

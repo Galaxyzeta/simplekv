@@ -11,5 +11,5 @@ func main() {
 	if config.DeleteEverythingWhenReboot {
 		os.RemoveAll("tmp") // TODO should remove this
 	}
-	simplekv.Run(nil)
+	simplekv.Run(nil, "", true)
 }

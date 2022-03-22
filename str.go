@@ -75,14 +75,8 @@ func getVal(key string) (string, error) {
 	return string(e.Value), nil
 }
 
-// setValWithLock writes entry to disk, set indexer, cache, expiration as well.
-// Lock operation is contained in this method.
-// Notice that expire is represented in second.
-func setValWithLock(key string, val string, expireAt uint32, extra dbfile.ExtraEnum) error {
-
-	dataInstance.mu.Lock()
-	defer dataInstance.mu.Unlock()
-
+// setValWithNoLock see func() setValWithLock
+func setValWithNoLock(key string, val string, expireAt uint32, extra dbfile.ExtraEnum, requiredAcks int) error {
 	// if this is a delete operation, pre-check whether the item exist.
 	if extra == dbfile.ExtraEnum_Delete && !internalExist(key) {
 		return nil
@@ -96,17 +90,27 @@ func setValWithLock(key string, val string, expireAt uint32, extra dbfile.ExtraE
 	}
 
 	// encode entry to stream
-	e := dbfile.NewEntryWithAll(key, val, expireAt, extra)
+	currentLeaderEpoch := dataInstance.vars.GetLatestLeaderEpoch()
+	e := dbfile.NewEntryWithAll(key, val, uint32(currentLeaderEpoch), expireAt, extra)
 	e.Extra = extra
 
-	// using write proxy to handle data commit related problems.
-	infileOffsetBeforeWrite, whichFile, err := writeProxy(e)
+	// Wait for the log to replicate to certain other nodes
+	infileOffsetBeforeWrite, whichFile, err := writeProxy(e, requiredAcks)
 	if err != nil {
 		dataInstance.logger.Errorf("Failed to commit: %s", err.Error())
 		return err
 	}
 	applyEntry(e, infileOffsetBeforeWrite, whichFile)
 	return nil
+}
+
+// setValWithLock writes entry to disk, set indexer, cache, expiration as well.
+// Lock operation is contained in this method.
+// Notice that expire is represented in second.
+func setValWithLock(key string, val string, expireAt uint32, extra dbfile.ExtraEnum, requiredAcks int) error {
+	dataInstance.mu.Lock()
+	defer dataInstance.mu.Unlock()
+	return setValWithNoLock(key, val, expireAt, extra, requiredAcks)
 }
 
 func applyEntry(e dbfile.Entry, offsetBeforeWrite int64, whichFile *dbfile.File) {
@@ -154,8 +158,16 @@ func internalTTL(key string) (uint32, error) {
 	return 0, config.ErrNoRelatedExpire
 }
 
+func internalCheckDataInstanceIsReady() bool {
+	return dataInstance != nil && dataInstance.isReady()
+}
+
 // Expire set TTL of a KV entry.
-func Expire(key string, ttl int) error {
+func Expire(key string, ttl int, requiredAcks int) error {
+
+	if !internalCheckDataInstanceIsReady() {
+		return config.ErrDataPlaneNotReady
+	}
 
 	dataInstance.mu.Lock()
 	defer dataInstance.mu.Unlock()
@@ -180,7 +192,7 @@ func Expire(key string, ttl int) error {
 	// }
 
 	// write an expire record
-	return setValWithLock(key, val, expireAt, dbfile.ExtraEnum_Unknown)
+	return setValWithNoLock(key, val, expireAt, dbfile.ExtraEnum_Unknown, requiredAcks)
 
 	// update expireAt
 	// if ttl != 0 {
@@ -190,29 +202,44 @@ func Expire(key string, ttl int) error {
 	// }
 }
 
-func Exist(key string) bool {
+func Exist(key string) (bool, error) {
+	if !internalCheckDataInstanceIsReady() {
+		return false, config.ErrDataPlaneNotReady
+	}
 	dataInstance.mu.RLock()
 	defer dataInstance.mu.RUnlock()
-	return internalExist(key)
+	return internalExist(key), nil
 }
 
 func TTL(key string) (uint32, error) {
+	if !internalCheckDataInstanceIsReady() {
+		return 0, config.ErrDataPlaneNotReady
+	}
 	dataInstance.mu.RLock()
 	defer dataInstance.mu.RUnlock()
 	return internalTTL(key)
 }
 
 func Get(key string) (string, error) {
+	if !internalCheckDataInstanceIsReady() {
+		return "", config.ErrDataPlaneNotReady
+	}
 	dataInstance.mu.RLock()
 	defer dataInstance.mu.RUnlock()
 	return getVal(key)
 }
 
 // Write writes to the disk file and then update the index and the cache.
-func Write(key string, value string) error {
-	return setValWithLock(key, value, 0, dbfile.ExtraEnum_Unknown)
+func Write(key string, value string, requiredAcks int) error {
+	if !internalCheckDataInstanceIsReady() {
+		return config.ErrDataPlaneNotReady
+	}
+	return setValWithLock(key, value, 0, dbfile.ExtraEnum_Unknown, requiredAcks)
 }
 
-func Delete(key string) error {
-	return setValWithLock(key, "", 0, dbfile.ExtraEnum_Delete)
+func Delete(key string, requiredAcks int) error {
+	if !internalCheckDataInstanceIsReady() {
+		return config.ErrDataPlaneNotReady
+	}
+	return setValWithLock(key, "", 0, dbfile.ExtraEnum_Delete, requiredAcks)
 }

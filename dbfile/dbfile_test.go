@@ -17,7 +17,7 @@ func TestByteUintConvert(t *testing.T) {
 func TestEntryEncode(t *testing.T) {
 	// TODO rewrite
 	// encode
-	e := NewEntryWithAll("hello", "world", 0, ExtraEnum_Delete)
+	e := NewEntryWithAll("hello", "world", 0, 0, ExtraEnum_Delete)
 
 	assert.Equal(t, ExtraEnum_Delete, e.Extra)
 

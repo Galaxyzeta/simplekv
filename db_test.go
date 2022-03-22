@@ -3,7 +3,6 @@ package simplekv
 import (
 	"fmt"
 	"io"
-	"os"
 	"strconv"
 	"testing"
 	"time"
@@ -13,53 +12,45 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-// delete the db data file folder before each test.
-func testDeleteFolder() {
-	err := os.RemoveAll(config.DataDir)
-	if err != nil {
-		panic(err)
-	}
-}
-
 func TestBasicIO(t *testing.T) {
-	testBootServer()
+	testBootServerStandalone()
+	defer ShutdownServerGracefully(true)
 
-	err := Write("hello", "world")
+	err := Write("hello", "world", 0)
 	assert.NoError(t, err)
 
 	v, err := Get("hello")
 	assert.NoError(t, err)
 	assert.Equal(t, "world", v)
 
-	err = Write("hello", "world2")
+	err = Write("hello", "world2", 0)
 	assert.NoError(t, err)
 
 	v, err = Get("hello")
 	assert.NoError(t, err)
 	assert.Equal(t, "world2", v)
 
-	err = Delete("hello")
+	err = Delete("hello", 0)
 	assert.NoError(t, err)
 
 	_, err = Get("hello")
 	assert.ErrorIs(t, err, config.ErrRecordNotFound)
 
-	testStopServer()
 }
 
 func TestLoadTwice(t *testing.T) {
 
 	var writeNoErr = func(k, v string) {
-		err := Write(k, v)
+		err := Write(k, v, 0)
 		assert.NoError(t, err)
 	}
 
 	var expireNoErr = func(k string, ms int) {
-		err := Expire(k, ms)
+		err := Expire(k, ms, 0)
 		assert.NoError(t, err)
 	}
 
-	testBootServer()
+	testBootServerStandalone()
 
 	writeNoErr("hello", "world")
 	expireNoErr("hello", 1)
@@ -71,30 +62,31 @@ func TestLoadTwice(t *testing.T) {
 	assert.ErrorIs(t, err, config.ErrRecordExpired)
 	assert.Equal(t, "", v)
 
-	testRestartDataPlane()
+	// server restart and wait until OK
+	testRestartServerAndWaitUntilOK()
 
 	v, err = Get("hello")
 	assert.ErrorIs(t, err, config.ErrRecordNotFound)
 	assert.Equal(t, "", v)
 
-	testStopServer()
+	ShutdownServerGracefully(true)
 }
 
 func TestExpire(t *testing.T) {
 
 	var writeNoErr = func(k, v string) {
-		err := Write(k, v)
+		err := Write(k, v, 0)
 		assert.NoError(t, err)
 	}
 
 	var expireNoErr = func(k string, ms int) {
-		err := Expire(k, ms)
+		err := Expire(k, ms, 0)
 		assert.NoError(t, err)
 	}
 
 	const setTTL = 2
 
-	testBootServer()
+	testBootServerStandalone()
 
 	writeNoErr("hello", "world")
 
@@ -125,7 +117,7 @@ func TestExpire(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NotNil(t, val)
 
-	testRestartDataPlane()
+	testRestartServerAndWaitUntilOK()
 
 	// after reload, expire time should be the same as the one before load
 
@@ -149,14 +141,14 @@ func TestExpire(t *testing.T) {
 	assert.ErrorIs(t, err, config.ErrRecordNotFound)
 	assert.Equal(t, "", val)
 
-	testStopServer()
+	ShutdownServerGracefully(true)
 
 }
 
 func TestMultipleFiles(t *testing.T) {
 	config.DataBlockSize = 64
 
-	testBootServer()
+	testBootServerStandalone()
 
 	getKey := func(i int) string {
 		return fmt.Sprintf("simpledb:testkey:%d", i)
@@ -168,7 +160,7 @@ func TestMultipleFiles(t *testing.T) {
 	const keyCnt = 10
 
 	for i := 0; i < keyCnt; i++ {
-		Write(getKey(i), getVal(i))
+		Write(getKey(i), getVal(i), 0)
 	}
 
 	var readCheck = func() {
@@ -180,14 +172,15 @@ func TestMultipleFiles(t *testing.T) {
 	}
 
 	readCheck()
-	testRestartDataPlane()
+	testRestartServerAndWaitUntilOK()
 	readCheck()
 
-	testStopServer()
+	ShutdownServerGracefully(true)
 }
 
+// This test contain some problems and will not pass now.
 func TestReadEntries(t *testing.T) {
-	testBootServer()
+	testBootServerStandalone()
 
 	getKey := func(i int) string {
 		return fmt.Sprintf("simpledb:testkey:%d", i)
@@ -199,7 +192,7 @@ func TestReadEntries(t *testing.T) {
 	const keyCnt = 10
 
 	for i := 0; i < keyCnt; i++ {
-		Write(getKey(i), getVal(i))
+		Write(getKey(i), getVal(i), 0)
 	}
 
 	timerRecorder := time.Now()
@@ -251,5 +244,5 @@ func TestReadEntries(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Len(t, entriesRaw, 0)
 
-	testStopServer()
+	ShutdownServerGracefully(true)
 }

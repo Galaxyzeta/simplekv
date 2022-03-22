@@ -196,6 +196,116 @@ func (x *FetchLogResponse) GetBaseResp() *BaseResponse {
 	return nil
 }
 
+type CollectLeaderEpochAndOffsetRequest struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	MyLeaderEpoch int64 `protobuf:"varint,1,opt,name=myLeaderEpoch,proto3" json:"myLeaderEpoch,omitempty"`
+}
+
+func (x *CollectLeaderEpochAndOffsetRequest) Reset() {
+	*x = CollectLeaderEpochAndOffsetRequest{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_proto_controlplane_proto_msgTypes[2]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *CollectLeaderEpochAndOffsetRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CollectLeaderEpochAndOffsetRequest) ProtoMessage() {}
+
+func (x *CollectLeaderEpochAndOffsetRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_controlplane_proto_msgTypes[2]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CollectLeaderEpochAndOffsetRequest.ProtoReflect.Descriptor instead.
+func (*CollectLeaderEpochAndOffsetRequest) Descriptor() ([]byte, []int) {
+	return file_proto_controlplane_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *CollectLeaderEpochAndOffsetRequest) GetMyLeaderEpoch() int64 {
+	if x != nil {
+		return x.MyLeaderEpoch
+	}
+	return 0
+}
+
+type CollectLeaderEpochAndOffsetResponse struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	LeaderEpoch int64         `protobuf:"varint,1,opt,name=leaderEpoch,proto3" json:"leaderEpoch,omitempty"`
+	Offset      int64         `protobuf:"varint,2,opt,name=offset,proto3" json:"offset,omitempty"`
+	BaseResp    *BaseResponse `protobuf:"bytes,255,opt,name=baseResp,proto3" json:"baseResp,omitempty"`
+}
+
+func (x *CollectLeaderEpochAndOffsetResponse) Reset() {
+	*x = CollectLeaderEpochAndOffsetResponse{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_proto_controlplane_proto_msgTypes[3]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *CollectLeaderEpochAndOffsetResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CollectLeaderEpochAndOffsetResponse) ProtoMessage() {}
+
+func (x *CollectLeaderEpochAndOffsetResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_controlplane_proto_msgTypes[3]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CollectLeaderEpochAndOffsetResponse.ProtoReflect.Descriptor instead.
+func (*CollectLeaderEpochAndOffsetResponse) Descriptor() ([]byte, []int) {
+	return file_proto_controlplane_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *CollectLeaderEpochAndOffsetResponse) GetLeaderEpoch() int64 {
+	if x != nil {
+		return x.LeaderEpoch
+	}
+	return 0
+}
+
+func (x *CollectLeaderEpochAndOffsetResponse) GetOffset() int64 {
+	if x != nil {
+		return x.Offset
+	}
+	return 0
+}
+
+func (x *CollectLeaderEpochAndOffsetResponse) GetBaseResp() *BaseResponse {
+	if x != nil {
+		return x.BaseResp
+	}
+	return nil
+}
+
 type RoleChangeRequest struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
@@ -207,7 +317,7 @@ type RoleChangeRequest struct {
 func (x *RoleChangeRequest) Reset() {
 	*x = RoleChangeRequest{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_proto_controlplane_proto_msgTypes[2]
+		mi := &file_proto_controlplane_proto_msgTypes[4]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -220,7 +330,7 @@ func (x *RoleChangeRequest) String() string {
 func (*RoleChangeRequest) ProtoMessage() {}
 
 func (x *RoleChangeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_controlplane_proto_msgTypes[2]
+	mi := &file_proto_controlplane_proto_msgTypes[4]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -233,7 +343,7 @@ func (x *RoleChangeRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RoleChangeRequest.ProtoReflect.Descriptor instead.
 func (*RoleChangeRequest) Descriptor() ([]byte, []int) {
-	return file_proto_controlplane_proto_rawDescGZIP(), []int{2}
+	return file_proto_controlplane_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *RoleChangeRequest) GetRole() ServerRole {
@@ -254,7 +364,7 @@ type RoleChangeResponse struct {
 func (x *RoleChangeResponse) Reset() {
 	*x = RoleChangeResponse{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_proto_controlplane_proto_msgTypes[3]
+		mi := &file_proto_controlplane_proto_msgTypes[5]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -267,7 +377,7 @@ func (x *RoleChangeResponse) String() string {
 func (*RoleChangeResponse) ProtoMessage() {}
 
 func (x *RoleChangeResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_controlplane_proto_msgTypes[3]
+	mi := &file_proto_controlplane_proto_msgTypes[5]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -280,7 +390,7 @@ func (x *RoleChangeResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RoleChangeResponse.ProtoReflect.Descriptor instead.
 func (*RoleChangeResponse) Descriptor() ([]byte, []int) {
-	return file_proto_controlplane_proto_rawDescGZIP(), []int{3}
+	return file_proto_controlplane_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *RoleChangeResponse) GetBaseResp() *BaseResponse {
@@ -299,7 +409,7 @@ type CollectOffsetRequest struct {
 func (x *CollectOffsetRequest) Reset() {
 	*x = CollectOffsetRequest{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_proto_controlplane_proto_msgTypes[4]
+		mi := &file_proto_controlplane_proto_msgTypes[6]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -312,7 +422,7 @@ func (x *CollectOffsetRequest) String() string {
 func (*CollectOffsetRequest) ProtoMessage() {}
 
 func (x *CollectOffsetRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_controlplane_proto_msgTypes[4]
+	mi := &file_proto_controlplane_proto_msgTypes[6]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -325,7 +435,7 @@ func (x *CollectOffsetRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CollectOffsetRequest.ProtoReflect.Descriptor instead.
 func (*CollectOffsetRequest) Descriptor() ([]byte, []int) {
-	return file_proto_controlplane_proto_rawDescGZIP(), []int{4}
+	return file_proto_controlplane_proto_rawDescGZIP(), []int{6}
 }
 
 type CollectOffsetResponse struct {
@@ -340,7 +450,7 @@ type CollectOffsetResponse struct {
 func (x *CollectOffsetResponse) Reset() {
 	*x = CollectOffsetResponse{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_proto_controlplane_proto_msgTypes[5]
+		mi := &file_proto_controlplane_proto_msgTypes[7]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -353,7 +463,7 @@ func (x *CollectOffsetResponse) String() string {
 func (*CollectOffsetResponse) ProtoMessage() {}
 
 func (x *CollectOffsetResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_controlplane_proto_msgTypes[5]
+	mi := &file_proto_controlplane_proto_msgTypes[7]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -366,7 +476,7 @@ func (x *CollectOffsetResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CollectOffsetResponse.ProtoReflect.Descriptor instead.
 func (*CollectOffsetResponse) Descriptor() ([]byte, []int) {
-	return file_proto_controlplane_proto_rawDescGZIP(), []int{5}
+	return file_proto_controlplane_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *CollectOffsetResponse) GetOffset() int64 {
@@ -392,7 +502,7 @@ type CollectWatermarkRequest struct {
 func (x *CollectWatermarkRequest) Reset() {
 	*x = CollectWatermarkRequest{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_proto_controlplane_proto_msgTypes[6]
+		mi := &file_proto_controlplane_proto_msgTypes[8]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -405,7 +515,7 @@ func (x *CollectWatermarkRequest) String() string {
 func (*CollectWatermarkRequest) ProtoMessage() {}
 
 func (x *CollectWatermarkRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_controlplane_proto_msgTypes[6]
+	mi := &file_proto_controlplane_proto_msgTypes[8]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -418,7 +528,7 @@ func (x *CollectWatermarkRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CollectWatermarkRequest.ProtoReflect.Descriptor instead.
 func (*CollectWatermarkRequest) Descriptor() ([]byte, []int) {
-	return file_proto_controlplane_proto_rawDescGZIP(), []int{6}
+	return file_proto_controlplane_proto_rawDescGZIP(), []int{8}
 }
 
 type CollectWatermarkResponse struct {
@@ -433,7 +543,7 @@ type CollectWatermarkResponse struct {
 func (x *CollectWatermarkResponse) Reset() {
 	*x = CollectWatermarkResponse{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_proto_controlplane_proto_msgTypes[7]
+		mi := &file_proto_controlplane_proto_msgTypes[9]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -446,7 +556,7 @@ func (x *CollectWatermarkResponse) String() string {
 func (*CollectWatermarkResponse) ProtoMessage() {}
 
 func (x *CollectWatermarkResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_controlplane_proto_msgTypes[7]
+	mi := &file_proto_controlplane_proto_msgTypes[9]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -459,7 +569,7 @@ func (x *CollectWatermarkResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CollectWatermarkResponse.ProtoReflect.Descriptor instead.
 func (*CollectWatermarkResponse) Descriptor() ([]byte, []int) {
-	return file_proto_controlplane_proto_rawDescGZIP(), []int{7}
+	return file_proto_controlplane_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *CollectWatermarkResponse) GetHwm() int64 {
@@ -496,6 +606,20 @@ var file_proto_controlplane_proto_rawDesc = []byte{
 	0x6c, 0x65, 0x61, 0x64, 0x65, 0x72, 0x48, 0x77, 0x12, 0x30, 0x0a, 0x08, 0x62, 0x61, 0x73, 0x65,
 	0x52, 0x65, 0x73, 0x70, 0x18, 0xff, 0x01, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x13, 0x2e, 0x70, 0x72,
 	0x6f, 0x74, 0x6f, 0x2e, 0x42, 0x61, 0x73, 0x65, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65,
+	0x52, 0x08, 0x62, 0x61, 0x73, 0x65, 0x52, 0x65, 0x73, 0x70, 0x22, 0x4a, 0x0a, 0x22, 0x43, 0x6f,
+	0x6c, 0x6c, 0x65, 0x63, 0x74, 0x4c, 0x65, 0x61, 0x64, 0x65, 0x72, 0x45, 0x70, 0x6f, 0x63, 0x68,
+	0x41, 0x6e, 0x64, 0x4f, 0x66, 0x66, 0x73, 0x65, 0x74, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74,
+	0x12, 0x24, 0x0a, 0x0d, 0x6d, 0x79, 0x4c, 0x65, 0x61, 0x64, 0x65, 0x72, 0x45, 0x70, 0x6f, 0x63,
+	0x68, 0x18, 0x01, 0x20, 0x01, 0x28, 0x03, 0x52, 0x0d, 0x6d, 0x79, 0x4c, 0x65, 0x61, 0x64, 0x65,
+	0x72, 0x45, 0x70, 0x6f, 0x63, 0x68, 0x22, 0x91, 0x01, 0x0a, 0x23, 0x43, 0x6f, 0x6c, 0x6c, 0x65,
+	0x63, 0x74, 0x4c, 0x65, 0x61, 0x64, 0x65, 0x72, 0x45, 0x70, 0x6f, 0x63, 0x68, 0x41, 0x6e, 0x64,
+	0x4f, 0x66, 0x66, 0x73, 0x65, 0x74, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x12, 0x20,
+	0x0a, 0x0b, 0x6c, 0x65, 0x61, 0x64, 0x65, 0x72, 0x45, 0x70, 0x6f, 0x63, 0x68, 0x18, 0x01, 0x20,
+	0x01, 0x28, 0x03, 0x52, 0x0b, 0x6c, 0x65, 0x61, 0x64, 0x65, 0x72, 0x45, 0x70, 0x6f, 0x63, 0x68,
+	0x12, 0x16, 0x0a, 0x06, 0x6f, 0x66, 0x66, 0x73, 0x65, 0x74, 0x18, 0x02, 0x20, 0x01, 0x28, 0x03,
+	0x52, 0x06, 0x6f, 0x66, 0x66, 0x73, 0x65, 0x74, 0x12, 0x30, 0x0a, 0x08, 0x62, 0x61, 0x73, 0x65,
+	0x52, 0x65, 0x73, 0x70, 0x18, 0xff, 0x01, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x13, 0x2e, 0x70, 0x72,
+	0x6f, 0x74, 0x6f, 0x2e, 0x42, 0x61, 0x73, 0x65, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65,
 	0x52, 0x08, 0x62, 0x61, 0x73, 0x65, 0x52, 0x65, 0x73, 0x70, 0x22, 0x3a, 0x0a, 0x11, 0x52, 0x6f,
 	0x6c, 0x65, 0x43, 0x68, 0x61, 0x6e, 0x67, 0x65, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x12,
 	0x25, 0x0a, 0x04, 0x72, 0x6f, 0x6c, 0x65, 0x18, 0x01, 0x20, 0x01, 0x28, 0x0e, 0x32, 0x11, 0x2e,
@@ -522,7 +646,7 @@ var file_proto_controlplane_proto_rawDesc = []byte{
 	0x73, 0x65, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x52, 0x08, 0x62, 0x61, 0x73, 0x65,
 	0x52, 0x65, 0x73, 0x70, 0x2a, 0x26, 0x0a, 0x0a, 0x53, 0x65, 0x72, 0x76, 0x65, 0x72, 0x52, 0x6f,
 	0x6c, 0x65, 0x12, 0x0c, 0x0a, 0x08, 0x66, 0x6f, 0x6c, 0x6c, 0x6f, 0x77, 0x65, 0x72, 0x10, 0x00,
-	0x12, 0x0a, 0x0a, 0x06, 0x6c, 0x65, 0x61, 0x64, 0x65, 0x72, 0x10, 0x01, 0x32, 0xbe, 0x02, 0x0a,
+	0x12, 0x0a, 0x0a, 0x06, 0x6c, 0x65, 0x61, 0x64, 0x65, 0x72, 0x10, 0x01, 0x32, 0xb6, 0x03, 0x0a,
 	0x13, 0x43, 0x6f, 0x6e, 0x74, 0x72, 0x6f, 0x6c, 0x50, 0x6c, 0x61, 0x6e, 0x65, 0x53, 0x65, 0x72,
 	0x76, 0x69, 0x63, 0x65, 0x12, 0x3d, 0x0a, 0x08, 0x46, 0x65, 0x74, 0x63, 0x68, 0x4c, 0x6f, 0x67,
 	0x12, 0x16, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x46, 0x65, 0x74, 0x63, 0x68, 0x4c, 0x6f,
@@ -532,18 +656,26 @@ var file_proto_controlplane_proto_rawDesc = []byte{
 	0x65, 0x12, 0x18, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x52, 0x6f, 0x6c, 0x65, 0x43, 0x68,
 	0x61, 0x6e, 0x67, 0x65, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x19, 0x2e, 0x70, 0x72,
 	0x6f, 0x74, 0x6f, 0x2e, 0x52, 0x6f, 0x6c, 0x65, 0x43, 0x68, 0x61, 0x6e, 0x67, 0x65, 0x52, 0x65,
-	0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x22, 0x00, 0x12, 0x4c, 0x0a, 0x0d, 0x43, 0x6f, 0x6c, 0x6c,
-	0x65, 0x63, 0x74, 0x4f, 0x66, 0x66, 0x73, 0x65, 0x74, 0x12, 0x1b, 0x2e, 0x70, 0x72, 0x6f, 0x74,
-	0x6f, 0x2e, 0x43, 0x6f, 0x6c, 0x6c, 0x65, 0x63, 0x74, 0x4f, 0x66, 0x66, 0x73, 0x65, 0x74, 0x52,
-	0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x1c, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x43,
-	0x6f, 0x6c, 0x6c, 0x65, 0x63, 0x74, 0x4f, 0x66, 0x66, 0x73, 0x65, 0x74, 0x52, 0x65, 0x73, 0x70,
-	0x6f, 0x6e, 0x73, 0x65, 0x22, 0x00, 0x12, 0x55, 0x0a, 0x10, 0x43, 0x6f, 0x6c, 0x6c, 0x65, 0x63,
-	0x74, 0x57, 0x61, 0x74, 0x65, 0x72, 0x6d, 0x61, 0x72, 0x6b, 0x12, 0x1e, 0x2e, 0x70, 0x72, 0x6f,
-	0x74, 0x6f, 0x2e, 0x43, 0x6f, 0x6c, 0x6c, 0x65, 0x63, 0x74, 0x57, 0x61, 0x74, 0x65, 0x72, 0x6d,
-	0x61, 0x72, 0x6b, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x1f, 0x2e, 0x70, 0x72, 0x6f,
-	0x74, 0x6f, 0x2e, 0x43, 0x6f, 0x6c, 0x6c, 0x65, 0x63, 0x74, 0x57, 0x61, 0x74, 0x65, 0x72, 0x6d,
-	0x61, 0x72, 0x6b, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x22, 0x00, 0x42, 0x08, 0x5a,
-	0x06, 0x2f, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
+	0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x22, 0x00, 0x12, 0x76, 0x0a, 0x1b, 0x43, 0x6f, 0x6c, 0x6c,
+	0x65, 0x63, 0x74, 0x4c, 0x65, 0x61, 0x64, 0x65, 0x72, 0x45, 0x70, 0x6f, 0x63, 0x68, 0x41, 0x6e,
+	0x64, 0x4f, 0x66, 0x66, 0x73, 0x65, 0x74, 0x12, 0x29, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e,
+	0x43, 0x6f, 0x6c, 0x6c, 0x65, 0x63, 0x74, 0x4c, 0x65, 0x61, 0x64, 0x65, 0x72, 0x45, 0x70, 0x6f,
+	0x63, 0x68, 0x41, 0x6e, 0x64, 0x4f, 0x66, 0x66, 0x73, 0x65, 0x74, 0x52, 0x65, 0x71, 0x75, 0x65,
+	0x73, 0x74, 0x1a, 0x2a, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x43, 0x6f, 0x6c, 0x6c, 0x65,
+	0x63, 0x74, 0x4c, 0x65, 0x61, 0x64, 0x65, 0x72, 0x45, 0x70, 0x6f, 0x63, 0x68, 0x41, 0x6e, 0x64,
+	0x4f, 0x66, 0x66, 0x73, 0x65, 0x74, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x22, 0x00,
+	0x12, 0x4c, 0x0a, 0x0d, 0x43, 0x6f, 0x6c, 0x6c, 0x65, 0x63, 0x74, 0x4f, 0x66, 0x66, 0x73, 0x65,
+	0x74, 0x12, 0x1b, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x43, 0x6f, 0x6c, 0x6c, 0x65, 0x63,
+	0x74, 0x4f, 0x66, 0x66, 0x73, 0x65, 0x74, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x1c,
+	0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x43, 0x6f, 0x6c, 0x6c, 0x65, 0x63, 0x74, 0x4f, 0x66,
+	0x66, 0x73, 0x65, 0x74, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x22, 0x00, 0x12, 0x55,
+	0x0a, 0x10, 0x43, 0x6f, 0x6c, 0x6c, 0x65, 0x63, 0x74, 0x57, 0x61, 0x74, 0x65, 0x72, 0x6d, 0x61,
+	0x72, 0x6b, 0x12, 0x1e, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x43, 0x6f, 0x6c, 0x6c, 0x65,
+	0x63, 0x74, 0x57, 0x61, 0x74, 0x65, 0x72, 0x6d, 0x61, 0x72, 0x6b, 0x52, 0x65, 0x71, 0x75, 0x65,
+	0x73, 0x74, 0x1a, 0x1f, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x43, 0x6f, 0x6c, 0x6c, 0x65,
+	0x63, 0x74, 0x57, 0x61, 0x74, 0x65, 0x72, 0x6d, 0x61, 0x72, 0x6b, 0x52, 0x65, 0x73, 0x70, 0x6f,
+	0x6e, 0x73, 0x65, 0x22, 0x00, 0x42, 0x08, 0x5a, 0x06, 0x2f, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x62,
+	0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
 }
 
 var (
@@ -559,38 +691,43 @@ func file_proto_controlplane_proto_rawDescGZIP() []byte {
 }
 
 var file_proto_controlplane_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_proto_controlplane_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
+var file_proto_controlplane_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
 var file_proto_controlplane_proto_goTypes = []interface{}{
-	(ServerRole)(0),                  // 0: proto.ServerRole
-	(*FetchLogRequest)(nil),          // 1: proto.FetchLogRequest
-	(*FetchLogResponse)(nil),         // 2: proto.FetchLogResponse
-	(*RoleChangeRequest)(nil),        // 3: proto.RoleChangeRequest
-	(*RoleChangeResponse)(nil),       // 4: proto.RoleChangeResponse
-	(*CollectOffsetRequest)(nil),     // 5: proto.CollectOffsetRequest
-	(*CollectOffsetResponse)(nil),    // 6: proto.CollectOffsetResponse
-	(*CollectWatermarkRequest)(nil),  // 7: proto.CollectWatermarkRequest
-	(*CollectWatermarkResponse)(nil), // 8: proto.CollectWatermarkResponse
-	(*BaseResponse)(nil),             // 9: proto.BaseResponse
+	(ServerRole)(0),                             // 0: proto.ServerRole
+	(*FetchLogRequest)(nil),                     // 1: proto.FetchLogRequest
+	(*FetchLogResponse)(nil),                    // 2: proto.FetchLogResponse
+	(*CollectLeaderEpochAndOffsetRequest)(nil),  // 3: proto.CollectLeaderEpochAndOffsetRequest
+	(*CollectLeaderEpochAndOffsetResponse)(nil), // 4: proto.CollectLeaderEpochAndOffsetResponse
+	(*RoleChangeRequest)(nil),                   // 5: proto.RoleChangeRequest
+	(*RoleChangeResponse)(nil),                  // 6: proto.RoleChangeResponse
+	(*CollectOffsetRequest)(nil),                // 7: proto.CollectOffsetRequest
+	(*CollectOffsetResponse)(nil),               // 8: proto.CollectOffsetResponse
+	(*CollectWatermarkRequest)(nil),             // 9: proto.CollectWatermarkRequest
+	(*CollectWatermarkResponse)(nil),            // 10: proto.CollectWatermarkResponse
+	(*BaseResponse)(nil),                        // 11: proto.BaseResponse
 }
 var file_proto_controlplane_proto_depIdxs = []int32{
-	9, // 0: proto.FetchLogResponse.baseResp:type_name -> proto.BaseResponse
-	0, // 1: proto.RoleChangeRequest.role:type_name -> proto.ServerRole
-	9, // 2: proto.RoleChangeResponse.baseResp:type_name -> proto.BaseResponse
-	9, // 3: proto.CollectOffsetResponse.baseResp:type_name -> proto.BaseResponse
-	9, // 4: proto.CollectWatermarkResponse.baseResp:type_name -> proto.BaseResponse
-	1, // 5: proto.ControlPlaneService.FetchLog:input_type -> proto.FetchLogRequest
-	3, // 6: proto.ControlPlaneService.RoleChange:input_type -> proto.RoleChangeRequest
-	5, // 7: proto.ControlPlaneService.CollectOffset:input_type -> proto.CollectOffsetRequest
-	7, // 8: proto.ControlPlaneService.CollectWatermark:input_type -> proto.CollectWatermarkRequest
-	2, // 9: proto.ControlPlaneService.FetchLog:output_type -> proto.FetchLogResponse
-	4, // 10: proto.ControlPlaneService.RoleChange:output_type -> proto.RoleChangeResponse
-	6, // 11: proto.ControlPlaneService.CollectOffset:output_type -> proto.CollectOffsetResponse
-	8, // 12: proto.ControlPlaneService.CollectWatermark:output_type -> proto.CollectWatermarkResponse
-	9, // [9:13] is the sub-list for method output_type
-	5, // [5:9] is the sub-list for method input_type
-	5, // [5:5] is the sub-list for extension type_name
-	5, // [5:5] is the sub-list for extension extendee
-	0, // [0:5] is the sub-list for field type_name
+	11, // 0: proto.FetchLogResponse.baseResp:type_name -> proto.BaseResponse
+	11, // 1: proto.CollectLeaderEpochAndOffsetResponse.baseResp:type_name -> proto.BaseResponse
+	0,  // 2: proto.RoleChangeRequest.role:type_name -> proto.ServerRole
+	11, // 3: proto.RoleChangeResponse.baseResp:type_name -> proto.BaseResponse
+	11, // 4: proto.CollectOffsetResponse.baseResp:type_name -> proto.BaseResponse
+	11, // 5: proto.CollectWatermarkResponse.baseResp:type_name -> proto.BaseResponse
+	1,  // 6: proto.ControlPlaneService.FetchLog:input_type -> proto.FetchLogRequest
+	5,  // 7: proto.ControlPlaneService.RoleChange:input_type -> proto.RoleChangeRequest
+	3,  // 8: proto.ControlPlaneService.CollectLeaderEpochAndOffset:input_type -> proto.CollectLeaderEpochAndOffsetRequest
+	7,  // 9: proto.ControlPlaneService.CollectOffset:input_type -> proto.CollectOffsetRequest
+	9,  // 10: proto.ControlPlaneService.CollectWatermark:input_type -> proto.CollectWatermarkRequest
+	2,  // 11: proto.ControlPlaneService.FetchLog:output_type -> proto.FetchLogResponse
+	6,  // 12: proto.ControlPlaneService.RoleChange:output_type -> proto.RoleChangeResponse
+	4,  // 13: proto.ControlPlaneService.CollectLeaderEpochAndOffset:output_type -> proto.CollectLeaderEpochAndOffsetResponse
+	8,  // 14: proto.ControlPlaneService.CollectOffset:output_type -> proto.CollectOffsetResponse
+	10, // 15: proto.ControlPlaneService.CollectWatermark:output_type -> proto.CollectWatermarkResponse
+	11, // [11:16] is the sub-list for method output_type
+	6,  // [6:11] is the sub-list for method input_type
+	6,  // [6:6] is the sub-list for extension type_name
+	6,  // [6:6] is the sub-list for extension extendee
+	0,  // [0:6] is the sub-list for field type_name
 }
 
 func init() { file_proto_controlplane_proto_init() }
@@ -625,7 +762,7 @@ func file_proto_controlplane_proto_init() {
 			}
 		}
 		file_proto_controlplane_proto_msgTypes[2].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*RoleChangeRequest); i {
+			switch v := v.(*CollectLeaderEpochAndOffsetRequest); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -637,7 +774,7 @@ func file_proto_controlplane_proto_init() {
 			}
 		}
 		file_proto_controlplane_proto_msgTypes[3].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*RoleChangeResponse); i {
+			switch v := v.(*CollectLeaderEpochAndOffsetResponse); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -649,7 +786,7 @@ func file_proto_controlplane_proto_init() {
 			}
 		}
 		file_proto_controlplane_proto_msgTypes[4].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*CollectOffsetRequest); i {
+			switch v := v.(*RoleChangeRequest); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -661,7 +798,7 @@ func file_proto_controlplane_proto_init() {
 			}
 		}
 		file_proto_controlplane_proto_msgTypes[5].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*CollectOffsetResponse); i {
+			switch v := v.(*RoleChangeResponse); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -673,7 +810,7 @@ func file_proto_controlplane_proto_init() {
 			}
 		}
 		file_proto_controlplane_proto_msgTypes[6].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*CollectWatermarkRequest); i {
+			switch v := v.(*CollectOffsetRequest); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -685,6 +822,30 @@ func file_proto_controlplane_proto_init() {
 			}
 		}
 		file_proto_controlplane_proto_msgTypes[7].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*CollectOffsetResponse); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_proto_controlplane_proto_msgTypes[8].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*CollectWatermarkRequest); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_proto_controlplane_proto_msgTypes[9].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*CollectWatermarkResponse); i {
 			case 0:
 				return &v.state
@@ -703,7 +864,7 @@ func file_proto_controlplane_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: file_proto_controlplane_proto_rawDesc,
 			NumEnums:      1,
-			NumMessages:   8,
+			NumMessages:   10,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
@@ -732,6 +893,7 @@ const _ = grpc.SupportPackageIsVersion6
 type ControlPlaneServiceClient interface {
 	FetchLog(ctx context.Context, in *FetchLogRequest, opts ...grpc.CallOption) (*FetchLogResponse, error)
 	RoleChange(ctx context.Context, in *RoleChangeRequest, opts ...grpc.CallOption) (*RoleChangeResponse, error)
+	CollectLeaderEpochAndOffset(ctx context.Context, in *CollectLeaderEpochAndOffsetRequest, opts ...grpc.CallOption) (*CollectLeaderEpochAndOffsetResponse, error)
 	CollectOffset(ctx context.Context, in *CollectOffsetRequest, opts ...grpc.CallOption) (*CollectOffsetResponse, error)
 	CollectWatermark(ctx context.Context, in *CollectWatermarkRequest, opts ...grpc.CallOption) (*CollectWatermarkResponse, error)
 }
@@ -762,6 +924,15 @@ func (c *controlPlaneServiceClient) RoleChange(ctx context.Context, in *RoleChan
 	return out, nil
 }
 
+func (c *controlPlaneServiceClient) CollectLeaderEpochAndOffset(ctx context.Context, in *CollectLeaderEpochAndOffsetRequest, opts ...grpc.CallOption) (*CollectLeaderEpochAndOffsetResponse, error) {
+	out := new(CollectLeaderEpochAndOffsetResponse)
+	err := c.cc.Invoke(ctx, "/proto.ControlPlaneService/CollectLeaderEpochAndOffset", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *controlPlaneServiceClient) CollectOffset(ctx context.Context, in *CollectOffsetRequest, opts ...grpc.CallOption) (*CollectOffsetResponse, error) {
 	out := new(CollectOffsetResponse)
 	err := c.cc.Invoke(ctx, "/proto.ControlPlaneService/CollectOffset", in, out, opts...)
@@ -784,6 +955,7 @@ func (c *controlPlaneServiceClient) CollectWatermark(ctx context.Context, in *Co
 type ControlPlaneServiceServer interface {
 	FetchLog(context.Context, *FetchLogRequest) (*FetchLogResponse, error)
 	RoleChange(context.Context, *RoleChangeRequest) (*RoleChangeResponse, error)
+	CollectLeaderEpochAndOffset(context.Context, *CollectLeaderEpochAndOffsetRequest) (*CollectLeaderEpochAndOffsetResponse, error)
 	CollectOffset(context.Context, *CollectOffsetRequest) (*CollectOffsetResponse, error)
 	CollectWatermark(context.Context, *CollectWatermarkRequest) (*CollectWatermarkResponse, error)
 }
@@ -797,6 +969,9 @@ func (*UnimplementedControlPlaneServiceServer) FetchLog(context.Context, *FetchL
 }
 func (*UnimplementedControlPlaneServiceServer) RoleChange(context.Context, *RoleChangeRequest) (*RoleChangeResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method RoleChange not implemented")
+}
+func (*UnimplementedControlPlaneServiceServer) CollectLeaderEpochAndOffset(context.Context, *CollectLeaderEpochAndOffsetRequest) (*CollectLeaderEpochAndOffsetResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CollectLeaderEpochAndOffset not implemented")
 }
 func (*UnimplementedControlPlaneServiceServer) CollectOffset(context.Context, *CollectOffsetRequest) (*CollectOffsetResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CollectOffset not implemented")
@@ -841,6 +1016,24 @@ func _ControlPlaneService_RoleChange_Handler(srv interface{}, ctx context.Contex
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(ControlPlaneServiceServer).RoleChange(ctx, req.(*RoleChangeRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ControlPlaneService_CollectLeaderEpochAndOffset_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CollectLeaderEpochAndOffsetRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ControlPlaneServiceServer).CollectLeaderEpochAndOffset(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/proto.ControlPlaneService/CollectLeaderEpochAndOffset",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ControlPlaneServiceServer).CollectLeaderEpochAndOffset(ctx, req.(*CollectLeaderEpochAndOffsetRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -892,6 +1085,10 @@ var _ControlPlaneService_serviceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "RoleChange",
 			Handler:    _ControlPlaneService_RoleChange_Handler,
+		},
+		{
+			MethodName: "CollectLeaderEpochAndOffset",
+			Handler:    _ControlPlaneService_CollectLeaderEpochAndOffset_Handler,
 		},
 		{
 			MethodName: "CollectOffset",

@@ -101,7 +101,7 @@ func (ld *logFetchDelayer) enqueue(offset int64) *logFetchDelayerItem {
 	return &entry
 }
 
-// notifyAndDequeue returns all offsets that are less or equals to curLeo,
+// notifyAndDequeue make all request that has offset less or equals to curLeo return,
 // and removes them from the queue as well.
 func (ld *logFetchDelayer) notifyAndDequeue(curLeo int64) {
 	ld.mu.Lock()
@@ -121,9 +121,19 @@ func (ld *logFetchDelayer) notifyAndDequeue(curLeo int64) {
 	}
 }
 
+func (ld *logFetchDelayer) shutdown() {
+	ld.mu.Lock()
+	for _, item := range ld.pendingOffset {
+		item.timeoutMark.Store(struct{}{})
+	}
+	ld.mu.Unlock()
+	ld.internalPurgeTimeout()
+}
+
 // --- Replication Manager ---
 
 type nodeReplicationStatus struct {
+	mu              sync.Mutex
 	lastCatchupTime time.Time
 	lastFetchTime   time.Time
 	delayedOffset   int64
@@ -133,8 +143,9 @@ type nodeReplicationStatus struct {
 type replicationManager struct {
 	logger        *util.Logger
 	rwmu          sync.RWMutex                      // mainly protect isrSet
-	isrSet        map[string]struct{}               // leader only
+	isrList       []string                          // leader only
 	nodeStatusMap map[string]*nodeReplicationStatus // leader only
+	sigkill       chan struct{}
 
 	logFetchDeposit *logFetchDelayer // blocks log fetch request when there's no more log to get.
 }
@@ -143,9 +154,10 @@ func newReplicaManager(node2hostport map[string]string) *replicationManager {
 	rm := &replicationManager{
 		logger:          util.NewLogger("[ReplicaManager]", config.LogOutputWriter),
 		rwmu:            sync.RWMutex{},
-		isrSet:          make(map[string]struct{}, len(node2hostport)),
+		isrList:         make([]string, 0, len(node2hostport)),
 		nodeStatusMap:   make(map[string]*nodeReplicationStatus, len(node2hostport)),
 		logFetchDeposit: newLogFetchDelayer(config.ReplicationLogDelayerTimeout * 10), // TODO take this value from config
+		sigkill:         make(chan struct{}, 1),
 	}
 	for nodeName := range node2hostport {
 		rm.nodeStatusMap[nodeName] = &nodeReplicationStatus{}
@@ -153,11 +165,16 @@ func newReplicaManager(node2hostport map[string]string) *replicationManager {
 	return rm
 }
 
+func (r *replicationManager) shutdown() {
+	r.sigkill <- struct{}{}
+	r.logFetchDeposit.shutdown()
+}
+
 func (r *replicationManager) onReceiveCollectWatermarkRequest() (int64, error) {
 	if !ctrlInstance.isLeader() {
 		return 0, config.ErrNotLeader
 	}
-	return dataInstance.varfp.ReadWatermarkFromCache(), nil
+	return dataInstance.vars.ReadWatermarkFromCache(), nil
 }
 
 // isIsr returns whether the nodename is in isr set.
@@ -166,25 +183,40 @@ func (r *replicationManager) isIsr(nodeName string, needLock bool) bool {
 		r.rwmu.RLock()
 		defer r.rwmu.RUnlock()
 	}
-	_, ok := r.isrSet[nodeName]
-	return ok
+	return util.StringListContains(r.isrList, nodeName)
 }
 
 // cloneIsrSet gets an isr set copy.
 // Notice, this isr set copy does not include leader itself.
-func (r *replicationManager) cloneIsrSet(needLock bool) map[string]struct{} {
+func (r *replicationManager) cloneIsrList(needLock bool) []string {
 	if needLock {
 		r.rwmu.RLock()
 		defer r.rwmu.RUnlock()
 	}
-	return util.CloneStringSet(r.isrSet)
+	ret := make([]string, len(r.isrList))
+	copy(ret, r.isrList)
+	return ret
+}
+
+// Overwrite old isrSet.
+func (r *replicationManager) setNewIsrAndCache(newIsrList []string) {
+	r.logger.Debugf("attempting to set newIsrList to %v", newIsrList)
+	util.RetryInfinite(func() error {
+		return zkSetIsr(newIsrList)
+	}, config.RetryBackoff)
+
+	r.rwmu.Lock()
+	defer r.rwmu.Unlock()
+	r.isrList = newIsrList
+	r.logger.Debugf("isr set Ok")
 }
 
 // updateWatermark updates self watermark.
 // This should be processed sequentially by commit a request to commitMgr first.
 func (r *replicationManager) updateWatermark() {
-	clonedIsrSet := r.cloneIsrSet(true)
-	toUpdateHw := dataInstance.varfp.ReadWatermarkFromCache()
+	clonedIsrList := r.cloneIsrList(true)
+	clonedIsrSet := util.StringList2Set(clonedIsrList)
+	toUpdateHw := dataInstance.vars.ReadWatermarkFromCache()
 	for nodeName, eachStat := range r.nodeStatusMap {
 		if _, nodeIsIsr := clonedIsrSet[nodeName]; nodeIsIsr {
 			if eachStat.logEndOffset < toUpdateHw {
@@ -192,7 +224,7 @@ func (r *replicationManager) updateWatermark() {
 			}
 		}
 	}
-	util.MustDo(func() error { return dataInstance.varfp.OverwriteWatermark(toUpdateHw) })
+	util.MustDo(func() error { return dataInstance.vars.OverwriteWatermark(toUpdateHw) })
 }
 
 // updateNodeStatus will be trigerred when received fetch request from other nodes.
@@ -203,64 +235,112 @@ func (r *replicationManager) updateNodeStatus(nodeName string, reqOffset int64) 
 		return fmt.Errorf("nodeName %s not exist", nodeName)
 	}
 	// Update statistics
+	status.mu.Lock()
 	status.lastFetchTime = time.Now()
-	logEndOffset := dataInstance.totalOffset()
-	status.delayedOffset = logEndOffset - reqOffset
-	if status.delayedOffset == 0 {
+	hwm := dataInstance.vars.ReadWatermarkFromCache()
+	status.delayedOffset = hwm - reqOffset
+	if status.delayedOffset <= 0 {
 		status.lastCatchupTime = time.Now()
 	}
+	status.mu.Unlock()
 
 	// Update high-watermark. LeadHW = min(allIsrLEO)
 	toUpdateHw := int64(math.MaxInt64)
-	isSelfIsr := r.isIsr(nodeName, true)
 	for _, eachStat := range r.nodeStatusMap {
-		if eachStat.logEndOffset < toUpdateHw && isSelfIsr {
+		if eachStat.logEndOffset < toUpdateHw {
 			toUpdateHw = eachStat.logEndOffset
 		}
 	}
 	if toUpdateHw != math.MaxInt64 {
-		util.MustDo(func() error { return dataInstance.varfp.OverwriteWatermark(toUpdateHw) })
+		util.MustDo(func() error { return dataInstance.vars.OverwriteWatermark(toUpdateHw) })
 	}
-
-	// Try modify ISR set.
-	if isSelfIsr {
-		// Test whether the node has been out of sync.
-		isOutOfSync := false
-		if status.delayedOffset > int64(config.ReplicationIsrMaxDelayCount) {
-			r.logger.Infof("Node %s is out of sync because its delayedOffset %d has reached max delay tolerance %d", nodeName, status.delayedOffset, config.ReplicationIsrMaxDelayCount)
-			isOutOfSync = true
-		} else if time.Since(status.lastFetchTime) > config.ReplicationIsrMaxNoFetchTime {
-			r.logger.Infof("Node %s is out of sync because it didn't receive fetch request in %v since %v", nodeName, config.ReplicationIsrMaxNoFetchTime, status.lastFetchTime)
-			isOutOfSync = true
-		} else if time.Since(status.lastCatchupTime) > config.ReplicationIsrMaxCatchUpTime {
-			isOutOfSync = true
-			r.logger.Infof("Node %s is out of sync because it didn't catch up leader in %v since %v", nodeName, config.ReplicationIsrMaxCatchUpTime, status.lastCatchupTime)
-		}
-		if isOutOfSync {
-			// Remove from ISR cache and update ZK.
-			r.rwmu.Lock()
-			delete(r.isrSet, nodeName)
-			r.rwmu.Unlock()
-		}
-	} else {
-		// Test whether the node can be added to sync ISR.
-		if status.delayedOffset < int64(config.ReplicationIsrMaxDelayCount) &&
-			time.Since(status.lastFetchTime) > config.ReplicationIsrMaxNoFetchTime &&
-			time.Since(status.lastCatchupTime) > config.ReplicationIsrMaxCatchUpTime {
-			r.logger.Infof("Node %s has catch up to the leader, attempting to add it back to isr", nodeName)
-			// Try add back to ISR.
-			r.rwmu.Lock()
-			r.isrSet[nodeName] = struct{}{}
-			r.rwmu.Unlock()
-		}
-	}
-
-	// We have to persist it to zookeeper. TODO should we use infinite retry?
-	util.RetryInfinite(func() error {
-		return zkSetIsr(r.isrSet)
-	}, config.RetryBackoff)
-	r.logger.Debugf("Current ISR = %v", r.isrSet)
 	return nil
+}
+
+// Isr is updated in a fixed interval by a scheduled goroutine.
+func (r *replicationManager) processTryUpdateIsr() {
+	// Warning: needs to maintain Isr order unchanged !
+	oldIsrList := r.cloneIsrList(true)
+	oldIsrSet := util.StringList2Set(oldIsrList)
+	newIsrList := make([]string, len(oldIsrList))
+	copy(newIsrList, oldIsrList)
+
+	hasModified := false
+	for nodeName, status := range r.nodeStatusMap {
+		r.logger.Debugf("Iterating node %s...", nodeName)
+		// Try modify ISR set.
+		// Test whether the node has been out of sync.
+		// Leader it self should always be inside Isr
+		isLeaderItself := nodeName == ctrlInstance.nodeName
+		if isLeaderItself {
+			_, ok := oldIsrSet[nodeName]
+			if !ok {
+				// Leader is not inside Isr, add it !
+				newIsrList = append(newIsrList, nodeName)
+				hasModified = true
+				r.logger.Infof("Node %s is Leader but not inside Isr, attempting to add it to isr", nodeName)
+			}
+			continue
+		}
+
+		// Consider follower nodes then.
+		_, isNodeIsr := oldIsrSet[nodeName]
+		if isNodeIsr {
+			isOutOfSync := false
+			if status.delayedOffset > int64(config.ReplicationIsrMaxDelayCount) {
+				r.logger.Infof("Node %s is out of sync because its delayedOffset %d has reached max delay tolerance %d", nodeName, status.delayedOffset, config.ReplicationIsrMaxDelayCount)
+				isOutOfSync = true
+			} else if time.Since(status.lastFetchTime) > config.ReplicationIsrMaxNoFetchTime {
+				r.logger.Infof("Node %s is out of sync because it didn't receive fetch request in %v since %v", nodeName, config.ReplicationIsrMaxNoFetchTime, status.lastFetchTime)
+				isOutOfSync = true
+			} else if time.Since(status.lastCatchupTime) > config.ReplicationIsrMaxCatchUpTime {
+				isOutOfSync = true
+				r.logger.Infof("Node %s is out of sync because it didn't catch up leader in %v since %v", nodeName, config.ReplicationIsrMaxCatchUpTime, status.lastCatchupTime)
+			}
+			if isOutOfSync {
+				// Remove from ISR cache and update ZK.
+				util.StringListDelete(newIsrList, nodeName)
+				hasModified = true
+			}
+		} else {
+			// Test whether the node can be added to ISR.
+			cond1 := status.delayedOffset < int64(config.ReplicationIsrMaxDelayCount)
+			cond2 := time.Since(status.lastFetchTime) < config.ReplicationIsrMaxNoFetchTime
+			cond3 := time.Since(status.lastCatchupTime) < config.ReplicationIsrMaxCatchUpTime
+			r.logger.Debugf("Node %s's delayedOffset = %d, require = %d", nodeName, status.delayedOffset, config.ReplicationIsrMaxDelayCount)
+			r.logger.Debugf("Node %s's lastFetchTime = %d, delta = %d ms, require < %d ms", nodeName, status.lastFetchTime.Unix(), time.Since(status.lastFetchTime).Milliseconds(), config.ReplicationIsrMaxNoFetchTime.Milliseconds())
+			r.logger.Debugf("Node %s's lastCatchupTime = %d, delta = %d ms, require < %d ms", nodeName, status.lastFetchTime.Unix(), time.Since(status.lastCatchupTime).Milliseconds(), config.ReplicationIsrMaxCatchUpTime.Milliseconds())
+			if cond1 && cond2 && cond3 {
+				r.logger.Infof("Node %s has caught up to the leader, attempting to add it back to isr", nodeName)
+				// Add back to ISR.
+				newIsrList = append(newIsrList, nodeName)
+				hasModified = true
+			}
+		}
+	}
+	// We have to persist it to zookeeper, if any modification is detected.
+	if hasModified {
+		r.setNewIsrAndCache(newIsrList)
+		if err := ctrlInstance.commitMgr.enqueueIsrSetUpdated(); err != nil {
+			r.logger.Errorf("Enqueue isrSet updated err: %s", err.Error()) // Most likely channel closed error
+		}
+		r.logger.Debugf("Current ISR = %v", newIsrList)
+	}
+}
+
+func (r *replicationManager) isrUpdateRoutine(checkInterval time.Duration) {
+	ticker := time.NewTicker(checkInterval)
+	for {
+		select {
+		case <-r.sigkill:
+			r.logger.Infof("IsrUpdateRoutine is shutdown")
+			return
+		default:
+			break
+		}
+		<-ticker.C
+		ctrlInstance.cmdExecutor.enqueueTryAlterIsr()
+	}
 }
 
 // onReceiveLogFetch will be handled when there's an log fetch request.
@@ -268,7 +348,7 @@ func (r *replicationManager) onReceiveLogFetchRequest(nodeName string, fromOffse
 
 	totalOffsetSnapshot := dataInstance.totalOffset()
 
-	r.logger.Debugf("LogFetchRequest params: fromOffset = %d, totalOffset = %d", fromOffset, totalOffsetSnapshot)
+	r.logger.Debugf("LogFetchRequest received, params: fromOffset = %d. Leader's log totalOffset = %d", fromOffset, totalOffsetSnapshot)
 	// If not leader, cannot respond.
 	if !ctrlInstance.isLeader() {
 		r.logger.Errorf("Refuse to serve data because I'm not leader")
@@ -276,7 +356,7 @@ func (r *replicationManager) onReceiveLogFetchRequest(nodeName string, fromOffse
 	}
 
 	// Try to ack all previous commits which has HW < fetchLog.Offset.
-	hw := dataInstance.varfp.ReadWatermarkFromCache()
+	hw := dataInstance.vars.ReadWatermarkFromCache()
 	// @debugging
 	r.logger.Debugf("high-watermark = %d", hw)
 	if fromOffset >= hw {
@@ -307,7 +387,7 @@ func (r *replicationManager) onReceiveLogFetchRequest(nodeName string, fromOffse
 // logSyncRoutine send fetch request to leader and append logs to its local storage.
 // Only work on follower.
 func (r *replicationManager) logSyncRoutine() {
-	var fetchAmount int64 = 10 // TODO change this value
+	var fetchAmount int64 = 1024 // TODO change this value
 	ticker := time.NewTicker(config.ReplicationLogFetchInterval)
 	for {
 		<-ticker.C
@@ -349,7 +429,7 @@ func (r *replicationManager) logSyncRoutine() {
 			updateHw = leaderHw
 		}
 		r.logger.Debugf("Trying to update my HW to %d", updateHw)
-		if err = dataInstance.varfp.OverwriteWatermark(updateHw); err != nil {
+		if err = dataInstance.vars.OverwriteWatermark(updateHw); err != nil {
 			r.logger.Errorf("Overwrite high-watermark failed: %s. This can be critical.", err)
 		}
 		r.logger.Debugf("Trying to update my HW to %d success", updateHw)
@@ -360,11 +440,13 @@ func (r *replicationManager) logSyncRoutine() {
 func (r *replicationManager) initIsr() {
 	if err := util.RetryWithMaxCount(func() (bool, error) {
 		isr, err0 := zkGetIsr()
-		if err0 != nil {
+		if zkNodeNotExistErr(err0) {
+			isr = make([]string, 0)
+		} else if err0 != nil {
 			r.logger.Errorf("zkGetIsr failed: %s", err0)
 			return true, err0
 		}
-		r.isrSet = util.StringList2Set(isr)
+		r.isrList = isr
 		return false, nil
 	}, config.RetryCount); err != nil {
 		panic(err)

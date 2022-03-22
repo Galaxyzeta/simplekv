@@ -14,7 +14,7 @@ func (*ControlPlaneService) FetchLog(ctx context.Context, req *proto.FetchLogReq
 	data, err := ctrlInstance.replicationManager.onReceiveLogFetchRequest(req.CallerNodeName, req.OffsetFrom, req.Count)
 	resp := &proto.FetchLogResponse{
 		Data:     data,
-		LeaderHw: dataInstance.varfp.ReadWatermarkFromCache(),
+		LeaderHw: dataInstance.vars.ReadWatermarkFromCache(),
 		BaseResp: &proto.BaseResponse{},
 	}
 	if err != nil {
@@ -25,14 +25,14 @@ func (*ControlPlaneService) FetchLog(ctx context.Context, req *proto.FetchLogReq
 }
 
 func (*ControlPlaneService) RoleChange(ctx context.Context, req *proto.RoleChangeRequest) (*proto.RoleChangeResponse, error) {
-	ctrlInstance.leaderElectionMgr.onReceiveRoleChangeRequest(req.Role)
+	// ctrlInstance.leaderElectionMgr.onReceiveRoleChangeRequest(req.Role)
 	return &proto.RoleChangeResponse{
 		BaseResp: &proto.BaseResponse{},
 	}, nil
 }
 
 func (*ControlPlaneService) CollectOffset(ctx context.Context, req *proto.CollectOffsetRequest) (*proto.CollectOffsetResponse, error) {
-	ctrlInstance.leaderElectionMgr.onReceiveOffsetCollectRequest()
+	// ctrlInstance.leaderElectionMgr.onReceiveOffsetCollectRequest()
 	return &proto.CollectOffsetResponse{
 		Offset:   dataInstance.totalOffset(),
 		BaseResp: &proto.BaseResponse{},
@@ -44,6 +44,20 @@ func (*ControlPlaneService) CollectWatermark(ctx context.Context, req *proto.Col
 	resp := &proto.CollectWatermarkResponse{
 		Hwm:      hwm,
 		BaseResp: &proto.BaseResponse{},
+	}
+	if err != nil {
+		resp.BaseResp.Code = 1
+		resp.BaseResp.Msg = err.Error()
+	}
+	return resp, nil
+}
+
+func (*ControlPlaneService) CollectLeaderEpochAndOffset(ctx context.Context, req *proto.CollectLeaderEpochAndOffsetRequest) (*proto.CollectLeaderEpochAndOffsetResponse, error) {
+	data, err := ctrlInstance.leaderElectionMgr.onReceiveGetLeaderEpochAndLogOffsetRequest(req.MyLeaderEpoch)
+	resp := &proto.CollectLeaderEpochAndOffsetResponse{
+		LeaderEpoch: data.LeaderEpoch,
+		Offset:      data.Offset,
+		BaseResp:    &proto.BaseResponse{},
 	}
 	if err != nil {
 		resp.BaseResp.Code = 1

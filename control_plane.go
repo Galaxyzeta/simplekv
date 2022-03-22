@@ -28,13 +28,12 @@ type controlPlane struct {
 	nodeMap           map[string]string // immutable after initialization
 	hostport2nodeName map[string]string // immutable after initialization
 
-	controllerElectionMgr *controllerElectionManager
-	leaderElectionMgr     *leaderElectionManager
-	rpcMgr                *controlPlaneRpcManager
-	commitMgr             *commitManager
-	replicationManager    *replicationManager
-	nodeMonitor           *nodeMonitor
-	cmdExecutor           *controlPlaneExecutor
+	leaderElectionMgr  *leaderElectionManagerV2
+	rpcMgr             *controlPlaneRpcManager
+	commitMgr          *commitManager
+	replicationManager *replicationManager
+	cmdExecutor        *controlPlaneExecutor
+	stats              *statsManager
 
 	condHasLeader    util.ConditionBlocker
 	condIsFollower   util.ConditionBlocker
@@ -57,14 +56,13 @@ func initControlPlaneSingleton() {
 			hostport2NodeName[eachHostport] = nodeName
 		}
 		ctrlInstance = &controlPlane{
-			nodeName:              config.ClusterNodeName,
-			controllerElectionMgr: newControllerElectionManager(),
-			commitMgr:             newCommitManager(),
-			leaderElectionMgr:     newLeaderElectionManager(),
-			rpcMgr:                newControlPlaneRpcManager(hostports),
-			replicationManager:    newReplicaManager(config.ClusterNode2HostportMap),
-			nodeMonitor:           newNodeMonitor(),
-			cmdExecutor:           newControlPlaneExecutor(),
+			nodeName:           config.ClusterNodeName,
+			commitMgr:          newCommitManager(),
+			leaderElectionMgr:  newLeaderElectionManagerV2(),
+			rpcMgr:             newControlPlaneRpcManager(hostports),
+			replicationManager: newReplicaManager(config.ClusterNode2HostportMap),
+			cmdExecutor:        newControlPlaneExecutor(),
+			stats:              newStatsManager(),
 
 			hostport2nodeName: hostport2NodeName,
 
@@ -80,13 +78,16 @@ func initControlPlaneSingleton() {
 
 func startControlPlaneSingleton() {
 	ctrlInstanceRunOnce.Do(func() { // TODO graceful shutdown.
-		go ctrlInstance.nodeMonitor.run()
 		go ctrlInstance.commitMgr.run()
 		go ctrlInstance.cmdExecutor.run()
 		// go ctrlInstance.controllerElectionMgr.run()
 		// go ctrlInstance.leaderElectionMgr.runElectionHost()
 		go ctrlInstance.replicationManager.run()
+		go ctrlInstance.stats.run()
+
+		ctrlInstance.leaderElectionMgr.startUp()
 	})
+
 }
 
 func (cp *controlPlane) currentLeaderName() string {
@@ -143,6 +144,14 @@ func (cp *controlPlane) isController() bool {
 	return cp.currentControllerName() == cp.nodeName
 }
 
+func (cp *controlPlane) markOffline(nodeName string) {
+	cp.offlineNodeSet.Store(nodeName, struct{}{})
+}
+
+func (cp *controlPlane) markOnline(nodeName string) {
+	cp.offlineNodeSet.Delete(nodeName)
+}
+
 func (cp *controlPlane) addToOffline(nodeName string) {
 	cp.offlineNodeSet.Store(nodeName, struct{}{})
 }
@@ -187,16 +196,46 @@ func (cp *controlPlane) getClusterSize() int {
 }
 
 func (cp *controlPlane) getOnlineHostports() (ret map[string]struct{}) {
-	offlineNodenames := map[string]struct{}{}
-	ret = make(map[string]struct{})
-	cp.offlineNodeSet.Range(func(key, value interface{}) bool {
-		offlineNodenames[key.(string)] = struct{}{}
-		return true
-	})
+	offlineNodeNames := cp.getOfflineNodeNames()
 	for nodeName, hostport := range cp.nodeMap {
-		if _, ok := offlineNodenames[nodeName]; !ok {
+		if _, ok := offlineNodeNames[nodeName]; !ok {
 			ret[hostport] = struct{}{}
 		}
 	}
 	return
+}
+
+func (cp *controlPlane) getOfflineNodeNames() map[string]struct{} {
+	offlineNodenames := map[string]struct{}{}
+	ret := make(map[string]struct{})
+	cp.offlineNodeSet.Range(func(key, value interface{}) bool {
+		offlineNodenames[key.(string)] = struct{}{}
+		return true
+	})
+	return ret
+}
+
+func (cp *controlPlane) getOnlineNodeNames() map[string]struct{} {
+	offlineNodeNames := cp.getOfflineNodeNames()
+	ret := make(map[string]struct{})
+	for nodeName, _ := range cp.nodeMap {
+		if _, ok := offlineNodeNames[nodeName]; ok {
+			ret[nodeName] = struct{}{}
+		}
+	}
+	return ret
+}
+
+func (cp *controlPlane) ShutdownGracefully() {
+	ctrlInstanceInitOnce = sync.Once{}
+	ctrlInstanceRunOnce = sync.Once{}
+	wait, err := ctrlInstance.commitMgr.enqueueShutdownEvent()
+	if err != nil {
+		fmt.Println(">>>> Cannot shutdown commitManager")
+	}
+	<-wait
+	ctrlInstance.cmdExecutor.enqueueShutdownAndWait()
+	ctrlInstance.replicationManager.shutdown()
+	// ctrlInstance = nil
+	fmt.Println(">>>> ControlPlane shutdown OK")
 }

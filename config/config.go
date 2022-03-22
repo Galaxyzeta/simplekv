@@ -44,6 +44,8 @@ type isrConfig struct {
 	MaxCatchUpTime int `yaml:"maxCatchUpTime"`
 	MaxNoFetchTime int `yaml:"maxNoFetchTime"`
 	MaxDelayCount  int `yaml:"maxDelayCount"`
+	UpdateInterval int `yaml:"updateInterval"`
+	MinIsrRequired int `yaml:"minInsrRequired"`
 }
 type commitConfig struct {
 	InitQueueSize int `yaml:"initQueueSize"`
@@ -68,7 +70,53 @@ type config struct {
 	Replication replicationConfig `yaml:"replication"`
 }
 
-var c config
+var c config = config{
+	Data: dataconfig{
+		Blocksize: 64,
+		Dir:       "tmp",
+	},
+	Net: netconfig{
+		Dataport: 9999,
+		Ctrlport: 9998,
+	},
+	Zk: zkconfig{
+		Servers: []string{
+			"127.0.0.1:2181",
+		},
+		Timeout:             3000,
+		NodeNotExistBackoff: 1000,
+	},
+	Retry: retryConfig{
+		Backoff: 50,
+		Count:   5,
+	},
+	Cluster: clusterConfig{
+		NodeName:         "",
+		Node2HostportMap: map[string]string{},
+	},
+	Commit: commitConfig{
+		InitQueueSize: 1024,
+		RequiredAcks:  0,
+		Timeout:       1000,
+	},
+	Log: logConfig{
+		Output: "stdout",
+	},
+	Election: electionConfig{
+		LeaderTimeout: 1000,
+	},
+	Replication: replicationConfig{
+		Isr: isrConfig{
+			MaxCatchUpTime: 500,
+			MaxNoFetchTime: 250,
+			MaxDelayCount:  20,
+			UpdateInterval: 1000,
+			MinIsrRequired: 1,
+		},
+		LogFetchInterval:  50,
+		LogDelayerTimeout: 500,
+	},
+}
 
 var DataBlockSize = int64(64)
 var DataDir = "tmp"
@@ -83,7 +131,7 @@ var RetryBackoff time.Duration = time.Millisecond * 50
 var RetryCount = 5
 var CommitInitQueueSize = 1024
 var CommitMaxAck = 0 // 0: don't need ack; 1: at least one ack; 1+: more ack.
-var CommitTimeout = time.Second * 5
+var CommitTimeout = time.Second * 1
 var ClusterNodeName = "default"
 var ClusterNode2HostportMap = map[string]string{}
 var ElectionLeaderTimeout = time.Second
@@ -92,6 +140,8 @@ var ReplicationLogDelayerTimeout = time.Millisecond * 500
 var ReplicationIsrMaxDelayCount = 20
 var ReplicationIsrMaxCatchUpTime = time.Millisecond * 500
 var ReplicationIsrMaxNoFetchTime = time.Millisecond * 250
+var ReplicationIsrUpdateInterval = time.Second
+var ReplicationIsrMinRequired = 1
 var LogOutput = "stdout"
 
 var ErrRecordNotFound = fmt.Errorf("record not found")
@@ -105,6 +155,10 @@ var ErrNotLeader = fmt.Errorf("not leader")
 var ErrInvalidInput = fmt.Errorf("invalid input")
 var ErrUnknownCmd = fmt.Errorf("unknown command")
 var ErrNoLeaderFound = fmt.Errorf("cannot find leader")
+var ErrDataPlaneNotReady = fmt.Errorf("dataplane not ready")
+var ErrNotEnoughIsr = fmt.Errorf("not enough Isr")
+var ErrInvalidRequiredIsr = fmt.Errorf("invalid requiredIsr param")
+var ErrEntryCancel = fmt.Errorf("entry canceled")
 
 var LogOutputWriter = os.Stdout
 
@@ -143,6 +197,8 @@ func InitCfgWithDirectPath(path string) {
 	ReplicationIsrMaxDelayCount = c.Replication.Isr.MaxDelayCount
 	ReplicationIsrMaxCatchUpTime = time.Millisecond * time.Duration(c.Replication.Isr.MaxCatchUpTime)
 	ReplicationIsrMaxNoFetchTime = time.Millisecond * time.Duration(c.Replication.Isr.MaxNoFetchTime)
+	ReplicationIsrUpdateInterval = time.Millisecond * time.Duration(c.Replication.Isr.UpdateInterval)
+	ReplicationIsrMinRequired = c.Replication.Isr.MinIsrRequired
 	LogOutput = c.Log.Output
 
 	if LogOutput != "stdout" {

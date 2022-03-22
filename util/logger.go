@@ -36,6 +36,11 @@ func (l *Logger) Warnf(format string, elems ...interface{}) {
 	l.commonPrint("Warn", format, elems...)
 }
 
+func (l *Logger) Fatalf(format string, elems ...interface{}) {
+	l.commonPrint("Fatal", format, elems...)
+	panic(fmt.Sprintf(format, elems...))
+}
+
 func (l *Logger) commonPrint(level string, format string, elems ...interface{}) {
 	l.instance.Printf(fmt.Sprintf("[%s] %s | %s | %s\n", level, getCaller(), time.Now().Format("2006-01-02 15:04:05.000"), format), elems...)
 }

@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/galaxyzeta/simplekv/cache"
@@ -18,17 +19,40 @@ import (
 	"github.com/galaxyzeta/simplekv/util"
 )
 
+type simpleKvState byte
+
+const (
+	simpleKvState_Inited simpleKvState = iota
+	simpleKvState_Booted
+	simpleKvState_Ready
+	simpleKvState_ShuttingDown
+	simplekvState_Closed simpleKvState = iota
+)
+
 type simpleKV struct {
-	files    []*dbfile.File  // write-ahead log files.
-	varfp    *dbfile.VarFile //
+	files    []*dbfile.File // write-ahead log files.
+	vars     *dbfile.Var    //
 	mu       sync.RWMutex
 	indexer  index.Indexer
 	cache    cache.Cacher
 	expireAt map[string]uint32
 	logger   *util.Logger
+	state    atomic.Value
 }
 
 var dataInstance *simpleKV
+
+func (kv *simpleKV) isReady() bool {
+	return kv.state.Load().(simpleKvState) == simpleKvState_Ready
+}
+
+func (kv *simpleKV) internalSetState(newState simpleKvState) {
+	kv.state.Store(newState)
+}
+
+func (kv *simpleKV) internalGetState() simpleKvState {
+	return kv.state.Load().(simpleKvState)
+}
 
 func (kv *simpleKV) internalTotalOffset() int64 { // TODO may panic
 	active := kv.files[len(kv.files)-1]
@@ -178,7 +202,9 @@ func initDataPlaneSingleton() {
 		mu:       sync.RWMutex{},
 		expireAt: make(map[string]uint32),
 		logger:   util.NewLogger("[SimpleKV]", config.LogOutputWriter),
+		state:    atomic.Value{},
 	}
+	dataInstance.internalSetState(simpleKvState_Inited)
 }
 
 // internalMustLoad reads the dbfile and buildup index.
@@ -247,11 +273,17 @@ func internalReadDbFiles(dirFs fs.FS, shouldDoInternalLoad bool) {
 
 func startDataPlaneSingleton() {
 
+	if dataInstance.internalGetState() != simpleKvState_Inited {
+		dataInstance.logger.Fatalf("cannot start dataPlaneSingleton before you init it")
+	}
+
 	// Check whether directory exist, if not make a new directory
 	util.MustDo(func() error { return os.MkdirAll(config.DataDir, 0644) })
 
 	// Open var file to read high-watermark.
-	dataInstance.varfp = dbfile.MustOpenVar(fmt.Sprintf("%s/%s", config.DataDir, "var")) // TODO magic string elimination
+	dataInstance.vars = dbfile.MustOpenVar(
+		fmt.Sprintf("%s/%s", config.DataDir, "var"),
+		fmt.Sprintf("%s/%s", config.DataDir, "leaderEpochOffset")) // TODO magic string elimination
 
 	// Load file metadata, but do not build up index.
 	var dirFs = os.DirFS(config.DataDir)
@@ -272,20 +304,38 @@ func startDataPlaneSingleton() {
 			time.Sleep(config.RetryBackoff)
 			continue
 		}
-		hwm, err := ctrlInstance.rpcMgr.collectWatermark(context.Background(), leaderHostport)
+		leaderEpochAndOffset, err := ctrlInstance.rpcMgr.collectLeaderEpochOffset(context.Background(), leaderHostport, dataInstance.vars.GetLatestLeaderEpoch())
 		if err != nil {
-			dataInstance.logger.Errorf("Failed to collectWatermark from leader: %s Retry again.", hwm)
+			dataInstance.logger.Errorf("Failed to collect leaderEpochAndOffset from leader: %s Retry again.", err.Error())
 			time.Sleep(config.RetryBackoff)
 			continue
 		}
-		// HWM is obtained, now truncate the log.
-		err = dataInstance.truncateEntries(hwm)
+		// LeaderEpoch is obtained, now truncate the log.
+		err = dataInstance.truncateEntries(leaderEpochAndOffset.Offset)
 		if err != nil {
-			panic("Truncate log failed, this is critical")
+			dataInstance.logger.Fatalf(err.Error())
 		}
 		break
 	}
 
 	// Log is truncated, now build up index anc cache into memory.
 	internalReadDbFiles(dirFs, true)
+	dataInstance.state.Store(simpleKvState_Ready)
+}
+
+// shutdownGracefullty release all related resources.
+func (kv *simpleKV) shutdownGracefully() {
+	kv.internalSetState(simpleKvState_ShuttingDown)
+	for _, fp := range kv.files {
+		err := fp.File().Close()
+		if err != nil {
+			kv.logger.Errorf("failed to close file %s, err: %s", fp.Name(), err.Error())
+		}
+	}
+	if err := kv.vars.Shutdown(); err != nil {
+		kv.logger.Errorf("failed to shutdown var files, err: %s", err.Error())
+	}
+	kv.internalSetState(simplekvState_Closed)
+	dataInstance = nil
+	fmt.Println(">>>> DataPlane shutdown OK")
 }

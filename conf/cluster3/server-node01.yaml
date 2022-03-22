@@ -23,6 +23,7 @@ replication:
     maxCatchUpTime: 500
     maxNoFetchTime: 250
     maxDelayCount: 20
+    updateInterval: 1000
   logFetchInterval: 50
 commit:
   initQueueSize: 1024
