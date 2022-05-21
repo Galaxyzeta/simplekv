@@ -2,16 +2,56 @@
 
 A simple distributed key-value storage system based on bitcask from scratch.
 
-## Roadmap
+Have minimum dependencies, nearly built from nothing.
 
-Progress: 🟦🟦🟦🟦🟦◻️◻️◻️◻️◻️
+This project is a experiment on kafka's distributed system and bitcask storage model. **Do not use this in production!**
+
+## How to run this project
+
+- To run this project, you should have **Apache Zookeeper** running on your OS first.
+- Let's run a standalone server as test!  Go to `/conf/client/cli.yaml` and `/conf/standalone/server-standalone.yaml`, and check whether your zookeeper port is correctly configured.
+
+  ```yaml
+  zk:
+    servers:
+      - 127.0.0.1:[YourPortHere]
+  ```
+
+- Then go into the root folder of this project, try to boot up a **standalone** server.
+
+  ```bash
+  go mod tidy
+  make standalone
+  ```
+
+- Boot up a CLI client to start operating.
+  ```bash
+  make cli
+  ```
+
+- Try some of the commands:
+  ```bash
+  127.0.0.1:2181> set hello 1
+  OK
+  127.0.0.1:2181> get hello
+  1
+  127.0.0.1:2181> expire hello 200
+  OK
+  127.0.0.1:2181> ttl hello
+  198
+  127.0.0.1:2181> del hello
+  OK
+  127.0.0.1:2181> get hello
+  record not found
+  ```
+
+## Roadmap
 
 Here are some basic requirements:
 
 - [x] LRU Cache.
 - An index system based on either hashmap / skiplist.
   - [x] hashmap
-  - [ ] skiplist
 - Support string data structure. Implement GET/SET/EXPIRE/DEL method.
   - [x] Get
   - [x] Set
@@ -25,14 +65,6 @@ Here are some basic requirements:
   - [x] ISR management.
 - [x] Using zookeeper/etcd as service registration, leader election, etc.
 - [x] Using GRPC to communicate between client-server and server-server.
-- [ ] Using Docker to put all stuff together.
-
-Advanced requirements:
-
-- [ ] Multi storage unit using hashslot / consistent hash.
-- [ ] Achieve elastic expansion.
-- [ ] Frontend dashboard.
-- [ ] Support list / hash / set / zset data structure.
 
 ## Special Thanks
 
