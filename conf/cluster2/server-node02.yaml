@@ -1,6 +1,7 @@
 data:
   blocksize: 10240
   dir: tmp/node02
+  lruCapacity: 4096
 net:
   dataport: 7779
   ctrlport: 7778
@@ -23,6 +24,7 @@ replication:
     maxNoFetchTime: 1000
     maxDelayCount: 20
     updateInterval: 1000
+    minIsrRequired: 1
   logFetchInterval: 50
   logDelayerTimeout: 500
 commit:

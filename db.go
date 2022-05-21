@@ -30,8 +30,8 @@ const (
 )
 
 type simpleKV struct {
-	files    []*dbfile.File // write-ahead log files.
-	vars     *dbfile.Var    //
+	files    []*dbfile.File
+	vars     *dbfile.Var
 	mu       sync.RWMutex
 	indexer  index.Indexer
 	cache    cache.Cacher
@@ -169,8 +169,7 @@ func (kv *simpleKV) truncateEntries(highOffset int64) error {
 	}
 	// close and delete remaining logs
 	for i := len(kv.files) - 1; i > idx; i-- {
-		osfile := file.File()
-		if err = osfile.Close(); err != nil {
+		if err = file.Close(); err != nil {
 			kv.logger.Errorf("close file err: %s", err.Error())
 			return err
 		}
@@ -189,6 +188,7 @@ func (kv *simpleKV) truncateEntries(highOffset int64) error {
 		kv.logger.Errorf("truncate file err: %s", err.Error())
 		return err
 	}
+	kv.logger.Infof("truncate file %s to %d", file.RelativePath(), truncatedOffset)
 	file.SetOffset(truncatedOffset)
 	// OK
 	return nil
@@ -201,8 +201,9 @@ func initDataPlaneSingleton() {
 		indexer:  index.NewHashIndexer(), // TODO add option for other indexers
 		mu:       sync.RWMutex{},
 		expireAt: make(map[string]uint32),
-		logger:   util.NewLogger("[SimpleKV]", config.LogOutputWriter),
+		logger:   util.NewLogger("[SimpleKV]", config.LogOutputWriter, config.EnableDebug),
 		state:    atomic.Value{},
+		cache:    cache.NewLRUCache(config.DataLruCapacity),
 	}
 	dataInstance.internalSetState(simpleKvState_Inited)
 }
@@ -244,19 +245,22 @@ func internalMustLoad(f *dbfile.File) {
 // Pre-read data file metadata into memory, but do not build up index.
 // FileIdx and ShouldDoInternalLoad are control parameters of this closure.
 func internalReadDbFiles(dirFs fs.FS, shouldDoInternalLoad bool) {
+
+	entries, err := fs.ReadDir(dirFs, ".")
+	if err != nil {
+		panic(err)
+	}
 	var fileIdx = 0
-	fn := func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			panic(err)
-		}
-		tuple := strings.Split(d.Name(), ".")
-		if d.IsDir() || len(tuple) != 2 || tuple[1] != "dat" {
-			return nil
+	for _, entry := range entries {
+		name := entry.Name()
+		tuple := strings.Split(name, ".")
+		if entry.IsDir() || len(tuple) != 2 || tuple[1] != "dat" {
+			continue
 		}
 		// If the file has been opened, do not open it again.
 		var fp *dbfile.File
 		if len(dataInstance.files) <= fileIdx {
-			fullpath := fmt.Sprintf("%s/%s", config.DataDir, path)
+			fullpath := fmt.Sprintf("%s/%s", config.DataDir, name)
 			fp = dbfile.MustOpen(fullpath)
 			dataInstance.files = append(dataInstance.files, fp)
 		} else {
@@ -266,9 +270,8 @@ func internalReadDbFiles(dirFs fs.FS, shouldDoInternalLoad bool) {
 			internalMustLoad(fp)
 		}
 		fileIdx++
-		return nil
 	}
-	fs.WalkDir(dirFs, ".", fn)
+
 }
 
 func startDataPlaneSingleton() {
@@ -313,7 +316,11 @@ func startDataPlaneSingleton() {
 		// LeaderEpoch is obtained, now truncate the log.
 		err = dataInstance.truncateEntries(leaderEpochAndOffset.Offset)
 		if err != nil {
-			dataInstance.logger.Fatalf(err.Error())
+			if err == config.ErrFileNotFound {
+				dataInstance.logger.Warnf("data file not found, skipping log truncation...")
+			} else {
+				dataInstance.logger.Fatalf(err.Error())
+			}
 		}
 		break
 	}
@@ -321,14 +328,14 @@ func startDataPlaneSingleton() {
 	// Log is truncated, now build up index anc cache into memory.
 	internalReadDbFiles(dirFs, true)
 	dataInstance.state.Store(simpleKvState_Ready)
+	dataInstance.logger.Infof("Dataplane is ready")
 }
 
 // shutdownGracefullty release all related resources.
 func (kv *simpleKV) shutdownGracefully() {
 	kv.internalSetState(simpleKvState_ShuttingDown)
 	for _, fp := range kv.files {
-		err := fp.File().Close()
-		if err != nil {
+		if err := fp.Close(); err != nil {
 			kv.logger.Errorf("failed to close file %s, err: %s", fp.Name(), err.Error())
 		}
 	}
@@ -336,6 +343,5 @@ func (kv *simpleKV) shutdownGracefully() {
 		kv.logger.Errorf("failed to shutdown var files, err: %s", err.Error())
 	}
 	kv.internalSetState(simplekvState_Closed)
-	dataInstance = nil
 	fmt.Println(">>>> DataPlane shutdown OK")
 }

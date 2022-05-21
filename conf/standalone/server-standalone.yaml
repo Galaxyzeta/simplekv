@@ -1,6 +1,6 @@
 data:
-  blocksize: 64
-  dir: tmp
+  blocksize: 4096
+  dir: tmp/standalone
 net:
   dataport: 9999
   ctrlport: 9998
@@ -8,7 +8,6 @@ zk:
   servers:
     - 127.0.0.1:2181
   sessionTimeout: 3000
-  nodeNotExistBackoff: 1000
 retry:
   backoff: 50
   count: 5
@@ -26,7 +25,6 @@ replication:
   logDelayerTimeout: 500
 commit:
   initQueueSize: 1024
-  requiredAcks: 1
   timeout: 30000
 election:
   leaderTimeout: 1000

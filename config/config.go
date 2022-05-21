@@ -15,17 +15,17 @@ import (
 var ConfigFileDir = ""
 
 type dataconfig struct {
-	Blocksize int64  `yaml:"blocksize"`
-	Dir       string `yaml:"dir"`
+	Blocksize   int64  `yaml:"blocksize"`
+	Dir         string `yaml:"dir"`
+	LruCapacity int64  `yaml:"lruCapacity"`
 }
 type netconfig struct {
 	Dataport int `yaml:"dataport"`
 	Ctrlport int `yaml:"ctrlport"`
 }
 type zkconfig struct {
-	Servers             []string `yaml:"servers"`
-	Timeout             int      `yaml:"sessionTimeout"`
-	NodeNotExistBackoff int      `yaml:"nodeNotExistBackoff"`
+	Servers []string `yaml:"servers"`
+	Timeout int      `yaml:"sessionTimeout"`
 }
 type retryConfig struct {
 	Backoff int `yaml:"backoff"`
@@ -45,11 +45,10 @@ type isrConfig struct {
 	MaxNoFetchTime int `yaml:"maxNoFetchTime"`
 	MaxDelayCount  int `yaml:"maxDelayCount"`
 	UpdateInterval int `yaml:"updateInterval"`
-	MinIsrRequired int `yaml:"minInsrRequired"`
+	MinIsrRequired int `yaml:"minIsrRequired"`
 }
 type commitConfig struct {
 	InitQueueSize int `yaml:"initQueueSize"`
-	RequiredAcks  int `yaml:"requiredAcks"`
 	Timeout       int `yaml:"timeout"`
 }
 type electionConfig struct {
@@ -57,6 +56,9 @@ type electionConfig struct {
 }
 type logConfig struct {
 	Output string `yaml:"output"`
+}
+type debugConfig struct {
+	PprofPort string `yaml:"pprof"`
 }
 type config struct {
 	Data        dataconfig        `yaml:"data"`
@@ -68,12 +70,14 @@ type config struct {
 	Log         logConfig         `yaml:"log"`
 	Election    electionConfig    `yaml:"election"`
 	Replication replicationConfig `yaml:"replication"`
+	Debug       debugConfig       `yaml:"debug"`
 }
 
 var c config = config{
 	Data: dataconfig{
-		Blocksize: 64,
-		Dir:       "tmp",
+		Blocksize:   64,
+		Dir:         "tmp",
+		LruCapacity: 4096,
 	},
 	Net: netconfig{
 		Dataport: 9999,
@@ -83,8 +87,7 @@ var c config = config{
 		Servers: []string{
 			"127.0.0.1:2181",
 		},
-		Timeout:             3000,
-		NodeNotExistBackoff: 1000,
+		Timeout: 3000,
 	},
 	Retry: retryConfig{
 		Backoff: 50,
@@ -96,7 +99,6 @@ var c config = config{
 	},
 	Commit: commitConfig{
 		InitQueueSize: 1024,
-		RequiredAcks:  0,
 		Timeout:       1000,
 	},
 	Log: logConfig{
@@ -111,43 +113,46 @@ var c config = config{
 			MaxNoFetchTime: 250,
 			MaxDelayCount:  20,
 			UpdateInterval: 1000,
-			MinIsrRequired: 1,
+			MinIsrRequired: 0,
 		},
 		LogFetchInterval:  50,
 		LogDelayerTimeout: 500,
+	},
+	Debug: debugConfig{
+		PprofPort: "6060s",
 	},
 }
 
 var DataBlockSize = int64(64)
 var DataDir = "tmp"
+var DataLruCapacity = 4096
 var NetDataPort = 9999
 var NetControlPort = 9998
 var ZkServers []string = []string{
 	"127.0.0.1:2181",
 }
 var ZkSessionTimeout time.Duration = time.Minute * 30
-var ZkNodeNotExistBackoff = time.Second
 var RetryBackoff time.Duration = time.Millisecond * 50
 var RetryCount = 5
 var CommitInitQueueSize = 1024
-var CommitMaxAck = 0 // 0: don't need ack; 1: at least one ack; 1+: more ack.
 var CommitTimeout = time.Second * 1
 var ClusterNodeName = "default"
 var ClusterNode2HostportMap = map[string]string{}
 var ElectionLeaderTimeout = time.Second
 var ReplicationLogFetchInterval = time.Millisecond * 50
 var ReplicationLogDelayerTimeout = time.Millisecond * 500
-var ReplicationIsrMaxDelayCount = 20
+var ReplicationIsrMaxDelayCount = 999999
 var ReplicationIsrMaxCatchUpTime = time.Millisecond * 500
 var ReplicationIsrMaxNoFetchTime = time.Millisecond * 250
 var ReplicationIsrUpdateInterval = time.Second
 var ReplicationIsrMinRequired = 1
 var LogOutput = "stdout"
+var DebugPprofPort = "6060"
 
 var ErrRecordNotFound = fmt.Errorf("record not found")
+var ErrInternalRecordExpired = fmt.Errorf("record expired") // Used internally
 var ErrInvalidParam = fmt.Errorf("invalid param")
 var ErrFileNotFound = fmt.Errorf("file not found")
-var ErrRecordExpired = fmt.Errorf("record expired")
 var ErrNoRelatedExpire = fmt.Errorf("expire not set")
 var ErrBrokenData = fmt.Errorf("broken data")
 var ErrTimeout = fmt.Errorf("timeout")
@@ -159,6 +164,7 @@ var ErrDataPlaneNotReady = fmt.Errorf("dataplane not ready")
 var ErrNotEnoughIsr = fmt.Errorf("not enough Isr")
 var ErrInvalidRequiredIsr = fmt.Errorf("invalid requiredIsr param")
 var ErrEntryCancel = fmt.Errorf("entry canceled")
+var ErrStaleLeaderEpoch = fmt.Errorf("stale leader epoch")
 
 var LogOutputWriter = os.Stdout
 
@@ -179,15 +185,14 @@ func InitCfgWithDirectPath(path string) {
 
 	DataBlockSize = c.Data.Blocksize
 	DataDir = c.Data.Dir
+	DataLruCapacity = int(c.Data.LruCapacity)
 	NetDataPort = c.Net.Dataport
 	NetControlPort = c.Net.Ctrlport
 	ZkServers = c.Zk.Servers
 	ZkSessionTimeout = time.Millisecond * time.Duration(c.Zk.Timeout)
-	ZkNodeNotExistBackoff = time.Millisecond * time.Duration(c.Zk.NodeNotExistBackoff)
 	RetryBackoff = time.Millisecond * time.Duration(c.Retry.Backoff)
 	RetryCount = c.Retry.Count
-	CommitInitQueueSize = c.Commit.Timeout
-	CommitMaxAck = c.Commit.RequiredAcks
+	CommitInitQueueSize = c.Commit.InitQueueSize
 	CommitTimeout = time.Millisecond * time.Duration(c.Commit.Timeout)
 	ClusterNodeName = c.Cluster.NodeName
 	ClusterNode2HostportMap = c.Cluster.Node2HostportMap
@@ -200,6 +205,7 @@ func InitCfgWithDirectPath(path string) {
 	ReplicationIsrUpdateInterval = time.Millisecond * time.Duration(c.Replication.Isr.UpdateInterval)
 	ReplicationIsrMinRequired = c.Replication.Isr.MinIsrRequired
 	LogOutput = c.Log.Output
+	DebugPprofPort = c.Debug.PprofPort
 
 	if LogOutput != "stdout" {
 		log.Println("all logs will be append to file: ", LogOutput)

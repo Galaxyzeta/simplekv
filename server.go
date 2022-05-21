@@ -3,7 +3,10 @@ package simplekv
 import (
 	"flag"
 	"fmt"
+	"log"
 	"net"
+	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"os/signal"
 	"sync"
@@ -23,7 +26,7 @@ var serverStopNotifier chan struct{} = make(chan struct{}, 1)
 // Run is the entry point of a SimpleKV server.
 func Run(afterLoadingConfig func(), cfgPath string, needParseFlag bool) {
 
-	var mainLogger = util.NewLogger("[Main]", config.LogOutputWriter)
+	var mainLogger = util.NewLogger("[Main]", config.LogOutputWriter, config.EnableDebug)
 
 	if needParseFlag {
 		if cfgPath == "" {
@@ -37,6 +40,11 @@ func Run(afterLoadingConfig func(), cfgPath string, needParseFlag bool) {
 	if afterLoadingConfig != nil {
 		afterLoadingConfig() // to override configs for testings purpose.
 	}
+
+	// Enable Pprof
+	go func() {
+		log.Println(http.ListenAndServe("localhost:"+config.DebugPprofPort, nil))
+	}()
 
 	var dataPlaneServerIpport = fmt.Sprintf("localhost:%d", config.NetDataPort)
 	var controlPlaneServerIpport = fmt.Sprintf("localhost:%d", config.NetControlPort)
@@ -143,4 +151,5 @@ func ShutdownServerGracefully(blockUntilClose bool) {
 	}
 	zkMustShutdown()
 	fmt.Println(">>>> System exited OK !")
+	os.Exit(0)
 }

@@ -46,7 +46,7 @@ func zkMonitorChildren(path string, onChildrenChanged func()) {
 
 // Watch path, if node exists before and is lost for now, will execute onNodeLost() and keep watching.
 // If node not exist, will execute onNodeNotExist() and return.
-func zKMonitorNodeLost(path string, onNodeLost func()) {
+func zKMonitorNodeLost(path string, onNodeLost func(), oneshot bool) {
 	go func() {
 		for {
 			exist, _, ch, err := zkClient.ExistsW(path)
@@ -59,8 +59,11 @@ func zKMonitorNodeLost(path string, onNodeLost func()) {
 				zkRetryBackoff()
 			}
 			if ev := <-ch; ev.Type == zk.EventNodeDeleted {
-				zkUtilLogger.Infof("Detected node deleted: %s, executing function onNodeLost: %s", path, onNodeLost)
+				zkUtilLogger.Infof("Detected node deleted: %s, executing function onNodeLost: %v", path, onNodeLost)
 				onNodeLost()
+			}
+			if oneshot {
+				break
 			}
 		}
 	}()
@@ -68,7 +71,7 @@ func zKMonitorNodeLost(path string, onNodeLost func()) {
 
 func zkMustInit() {
 	var err error
-	zkUtilLogger = util.NewLogger("[ZkUtil]", config.LogOutputWriter)
+	zkUtilLogger = util.NewLogger("[ZkUtil]", config.LogOutputWriter, config.EnableDebug)
 	zkClient, _, err = zk.Connect(config.ZkServers, config.ZkSessionTimeout)
 	if err != nil {
 		panic(err)
@@ -271,16 +274,43 @@ func zkTrySetLeader(metadata util.ZkLeader) (bool, error) {
 	return true, nil
 }
 
-func zkRegisterNode(nodeName string) error {
-	return util.RetryWithMaxCount(func() (bool, error) {
-		var nodePath = fmt.Sprintf("%s/%s", ZkPathNodeConnection, nodeName)
+func zkSetLeaderInfiniteRetry(metadata util.ZkLeader) {
+	util.RetryInfinite(func() error {
+		_, err := zkTrySetLeader(metadata)
+		if err != nil {
+			zkUtilLogger.Errorf(err.Error())
+		}
+		return err
+	}, config.RetryBackoff)
+}
+
+// Process until the node is not exist.
+func zkForceDeleteNodeWithInfiniteRetry(nodeName string) {
+	util.RetryInfinite(func() error {
+		var err = zkClient.Delete(nodeName, -1)
+		if err == zk.ErrNoNode {
+			return nil
+		} else if err != nil {
+			zkUtilLogger.Errorf(err.Error())
+		}
+		return err
+	}, config.RetryBackoff)
+}
+
+func zkGetLivingNodeFullPath(nodeName string) string {
+	return fmt.Sprintf("%s/%s", ZkPathNodeConnection, nodeName)
+}
+
+func zkRegisterNodeWithInfiniteRetry(nodePath string) {
+	util.RetryInfinite(func() error {
 		_, err := zkClient.Create(nodePath, []byte(ctrlInstance.getSelfHostport()), zk.FlagEphemeral, zkPermAll)
 		if err != nil && err != zk.ErrNodeExists {
-			return true, err
+			return nil
+		} else {
+			return err
 		}
-		zkUtilLogger.Infof("Registering %s to znode OK", nodePath)
-		return false, nil
-	}, config.RetryCount)
+		return nil
+	}, config.RetryBackoff)
 }
 
 func zkGetLivingNodes() ([]string, error) {

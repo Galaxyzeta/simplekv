@@ -11,17 +11,21 @@ import (
 // TODO let's implement an async log writer.
 
 type Logger struct {
-	instance *log.Logger
+	instance    *log.Logger
+	enableDebug bool
 }
 
-func NewLogger(prefix string, writer io.Writer) *Logger {
+func NewLogger(prefix string, writer io.Writer, enableDebug bool) *Logger {
 	return &Logger{
-		instance: log.New(writer, prefix, 0),
+		instance:    log.New(writer, prefix, 0),
+		enableDebug: enableDebug,
 	}
 }
 
 func (l *Logger) Debugf(format string, elems ...interface{}) {
-	l.commonPrint("Debug", format, elems...)
+	if l.enableDebug {
+		l.commonPrint("Debug", format, elems...)
+	}
 }
 
 func (l *Logger) Infof(format string, elems ...interface{}) {

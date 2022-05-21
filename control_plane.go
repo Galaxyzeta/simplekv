@@ -13,6 +13,9 @@ import (
 var ctrlInstance *controlPlane
 var ctrlInstanceInitOnce = sync.Once{}
 var ctrlInstanceRunOnce = sync.Once{}
+var shutdownStateInstance = *&shutdownStateContainer{
+	isShuttingDown: false,
+}
 
 type roleStateEnum uint8
 
@@ -21,6 +24,10 @@ const (
 	roleState_Leader
 	roleState_Follower
 )
+
+type shutdownStateContainer struct {
+	isShuttingDown bool
+}
 
 // controlPlane coordinates distributive problems.
 type controlPlane struct {
@@ -41,6 +48,9 @@ type controlPlane struct {
 
 	offlineNodeSet sync.Map
 
+	logger *util.Logger
+
+	_leaderEpoch       int          // for both leader and follower
 	_curLeaderName     atomic.Value // string
 	_curControllerName atomic.Value // string
 	_curRoleStatus     atomic.Value // roleStatusEnum
@@ -70,6 +80,8 @@ func initControlPlaneSingleton() {
 			condHasLeader:    util.NewConditionBlocker(func() bool { return ctrlInstance.hasLeader() }),
 			condIsController: util.NewConditionBlocker(func() bool { return ctrlInstance.isController() }),
 			condIsFollower:   util.NewConditionBlocker(func() bool { return ctrlInstance.isFollower() }),
+
+			logger: util.NewLogger("[CtrlPlane]", config.LogOutputWriter, config.EnableDebug),
 		}
 		ctrlInstance.setCurrentControllerName("")
 		ctrlInstance.setCurrentLeaderName("")
@@ -87,7 +99,35 @@ func startControlPlaneSingleton() {
 
 		ctrlInstance.leaderElectionMgr.startUp()
 	})
+}
 
+func (cp *controlPlane) setShutdown(boolean bool) {
+	shutdownStateInstance.isShuttingDown = boolean
+}
+
+func (cp *controlPlane) getIsShutingdown() bool {
+	return shutdownStateInstance.isShuttingDown
+}
+
+// isLeaderEpochStaleAndTryUpdate returns whether leader epoch is stale. If there's a newer leader epoch, try to update to that value.
+func (cp *controlPlane) isLeaderEpochStaleAndTryUpdate(leaderEpoch int) bool {
+	lle := cp.getLeaderEpoch()
+	if lle > leaderEpoch {
+		cp.logger.Warnf("stale leader epoch detected, myLeaderEpoch is %d, but leader's epoch is %d", lle, leaderEpoch)
+		return true
+	} else if lle < leaderEpoch {
+		cp.logger.Warnf("newer leader epoch detected! update leader epoch to %d", leaderEpoch)
+		cp.setLeaderEpoch(leaderEpoch)
+	}
+	return false
+}
+
+func (cp *controlPlane) getLeaderEpoch() int {
+	return cp._leaderEpoch
+}
+
+func (cp *controlPlane) setLeaderEpoch(newLeaderEpoch int) {
+	cp._leaderEpoch = newLeaderEpoch
 }
 
 func (cp *controlPlane) currentLeaderName() string {
@@ -229,6 +269,7 @@ func (cp *controlPlane) getOnlineNodeNames() map[string]struct{} {
 func (cp *controlPlane) ShutdownGracefully() {
 	ctrlInstanceInitOnce = sync.Once{}
 	ctrlInstanceRunOnce = sync.Once{}
+	cp.setShutdown(true)
 	wait, err := ctrlInstance.commitMgr.enqueueShutdownEvent()
 	if err != nil {
 		fmt.Println(">>>> Cannot shutdown commitManager")
@@ -238,4 +279,5 @@ func (cp *controlPlane) ShutdownGracefully() {
 	ctrlInstance.replicationManager.shutdown()
 	// ctrlInstance = nil
 	fmt.Println(">>>> ControlPlane shutdown OK")
+	cp.setShutdown(false)
 }

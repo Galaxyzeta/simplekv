@@ -1,16 +1,16 @@
-package main
+package client
 
 import (
 	"fmt"
 	"sync/atomic"
 	"time"
 
-	"github.com/galaxyzeta/simplekv"
 	"github.com/galaxyzeta/simplekv/util"
 	"github.com/go-zookeeper/zk"
 )
 
 const retryBackoff = time.Second
+const ZkPathLeaderNode = "/simplekv/election/leader"
 
 var _currentLeaderHostport atomic.Value
 
@@ -27,7 +27,7 @@ func setCurrentLeaderDataHostport(hostport string) {
 
 func monitorCurrentLeader() {
 	for {
-		data, _, ch, err := zkClient.GetW(simplekv.ZkPathLeaderNode)
+		data, _, ch, err := zkClient.GetW(ZkPathLeaderNode)
 		if err != nil {
 			if err == zk.ErrNoNode {
 				setCurrentLeaderDataHostport("")

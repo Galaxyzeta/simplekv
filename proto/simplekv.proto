@@ -12,25 +12,23 @@ service SimpleKV {
 	rpc Expire(ExpireRequest) returns (BaseResponse){};
 	rpc TTL(TTLRequest) returns (BaseResponse){};
 }
-
 message GetRequest {
 	string key = 1;
 }
-
 message SetRequest {
 	string key = 1;
 	string value = 2;
+	int64 requiredAcks = 3;
 }
-
 message DelRequest {
 	string key = 1;
+	int64 requiredAcks = 2;
 }
-
 message ExpireRequest {
 	string key = 1;
 	uint32 ttl = 2;
+	int64 requiredAcks = 3;
 }
-
 message TTLRequest{
 	string key = 1;
 }

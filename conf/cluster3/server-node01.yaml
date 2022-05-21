@@ -1,33 +1,40 @@
 data:
-  blocksize: 64
+  blocksize: 10240
   dir: tmp/node01
+  lruCapacity: 4096
 net:
-  dataport: 1119
-  ctrlport: 1118
+  dataport: 6669
+  ctrlport: 6668
 zk:
   servers:
     - 127.0.0.1:2181
-  sessionTimeout: 5
+  sessionTimeout: 3000
   nodeNotExistBackoff: 1000
 retry:
-  backoff: 50
+  backoff: 500
   count: 5
 cluster:
   nodeName: node01
   node2Hostports:
-    node01: 127.0.0.1:1118
-    node02: 127.0.0.1:2228
-    node03: 127.0.0.1:3338
+    node01: 127.0.0.1:6668
+    node02: 127.0.0.1:7778
+    node03: 127.0.0.1:8888
 replication:
   isr:
-    maxCatchUpTime: 500
-    maxNoFetchTime: 250
-    maxDelayCount: 20
+    maxCatchUpTime: 1000
+    maxNoFetchTime: 1000
+    maxDelayCount: 10000
     updateInterval: 1000
+    minIsrRequired: 2
   logFetchInterval: 50
+  logDelayerTimeout: 500
 commit:
   initQueueSize: 1024
   requiredAcks: 2
-  timeout: 30000
+  timeout: 2000
+election:
+  leaderTimeout: 1000
 log:
-  output: tmp/.log
+  output: stdout
+debug:
+  pprof: 6060

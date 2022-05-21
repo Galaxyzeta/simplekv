@@ -36,6 +36,14 @@ func MustOpenFileAppend(path string) *os.File {
 	return fp
 }
 
+func MustOpenFileReadonly(path string) *os.File {
+	fp, err := os.OpenFile(path, os.O_CREATE|os.O_RDONLY, 0644)
+	if err != nil {
+		panic(err)
+	}
+	return fp
+}
+
 func MustOpenFileRndRW(path string) *os.File {
 	fp, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0644)
 	if err != nil {

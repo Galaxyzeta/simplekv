@@ -56,8 +56,12 @@ type commitEntry struct {
 	completeCh            chan error
 	timestamp             time.Time // used for debugging only
 	timeout               *time.Timer
-	nextEntry             *commitEntry // point to the next entry in the queue.
 	state                 commitEntryStateType
+}
+
+// Implement util.IntGetter
+func (e commitEntry) Get() int {
+	return int(e.offset)
 }
 
 // waitUntilComplete waits for an entry to be fully acked before timeout.
@@ -74,6 +78,7 @@ func (e *commitEntry) waitUntilComplete() error {
 
 // complete the operation reprensted by the entry by putting a struct{} signal to the channel.
 func (e *commitEntry) complete() {
+	ctrlInstance.logger.Debugf("completing entry offset = %d", e.offset)
 	e.completeCh <- nil
 }
 
@@ -98,7 +103,7 @@ func (e *commitEntry) tryComplete(isrSet map[string]struct{}) bool {
 
 // canBeComplete checks whether the entry has satisfied given complete condition.
 func (e *commitEntry) canBeComplete(isrSet map[string]struct{}) bool {
-	if e.requiredAcksToRespond < 0 {
+	if e.requiredAcksToRespond == commitAck_AllIsr {
 		validCnt := 0
 		for node := range e.ackedNodeName {
 			_, ok := isrSet[node]
@@ -106,10 +111,10 @@ func (e *commitEntry) canBeComplete(isrSet map[string]struct{}) bool {
 				validCnt += 1
 			}
 		}
-		return validCnt >= len(isrSet)
-	} else {
-		return len(e.ackedNodeName) >= e.requiredAcksToRespond
+		return validCnt >= len(isrSet)-1
 	}
+	ctrlInstance.logger.Warnf("log entry offset = %d appeared in commit entry, but its requiredAck is not AllIsr !", e.offset)
+	return true
 }
 
 // commitAck represents an ack that was recevied from log fetch request.
@@ -130,7 +135,7 @@ func (e *commitAck) String() string {
 // commitManager handles all uncommitted requests.
 type commitManager struct {
 	eventChannel chan commitManagerEvent
-	hashQueue
+	waitQueue    *util.IntHashQueue[commitEntry]
 	logger       *util.Logger
 	cachedIsrSet map[string]struct{} // The isr cache that the commitManager thought to be currently. Updated through event queue.
 }
@@ -144,14 +149,13 @@ type hashQueue struct {
 func newCommitManager() *commitManager {
 	return &commitManager{
 		eventChannel: make(chan commitManagerEvent),
-		hashQueue:    hashQueue{queue: make([]*commitEntry, 0, config.CommitInitQueueSize), hash: make(map[int64]*commitEntry, config.CommitInitQueueSize)},
-		logger:       util.NewLogger("[CommitManager]", config.LogOutputWriter),
+		waitQueue:    util.NewIntHashQueueWithCapacity[commitEntry](config.CommitInitQueueSize, config.CommitInitQueueSize),
+		logger:       util.NewLogger("[CommitManager]", config.LogOutputWriter, config.EnableDebug),
 	}
 }
 
 // Shutdown commit manager until all events were complete.
 func (cm *commitManager) processShutdown(waitCh chan struct{}) {
-
 	waitCh <- struct{}{}
 }
 
@@ -221,34 +225,23 @@ func (cm *commitManager) internalEnqueueEvent(ev commitManagerEvent) (err error)
 // try to complete the first element in the queue, if it is completed, dequeue it and perform check again.
 // WARN: this method should only get invoked internally.
 func (cm *commitManager) internalTryCompleteFromWaitingQueue() {
-	for {
-		if len(cm.queue) == 0 {
-			return
-		}
-		first := cm.queue[0]
-		// If the first element is canceled / timeout already, dequeue it directly.
-		needDeq := false
+	cm.waitQueue.TryComplete(func(first *commitEntry) bool {
 		if first.state == commitEntryStateType_Canceled || first.state == commitEntryStateType_Timeout {
 			ctrlInstance.stats.recordLogCommitFailed()
-			needDeq = true
+			return true
 		}
 		if first.tryComplete(cm.cachedIsrSet) {
 			// @Debugging
 			if config.EnableTimeEstimate {
 				t := time.Since(first.timestamp)
-				cm.logger.Debugf("commit wait time delta = %d ms", t.Milliseconds())
+				cm.logger.Infof("commit wait time delta = %d ms for entry offset = %d", t.Milliseconds(), first.offset)
 				ctrlInstance.stats.recordLogCommit(t)
-				needDeq = true
+				return true
 			}
 			cm.logger.Infof("offset = %d is considered commited", first.offset)
 		}
-		if needDeq {
-			cm.queue = cm.queue[1:]
-			delete(cm.hash, first.offset)
-			continue // do another round of check
-		}
-		return // cannot complete the first element, quit checking
-	}
+		return false
+	})
 }
 
 // --- handlers ---
@@ -261,16 +254,17 @@ func (cm *commitManager) processLogFetchAck(ack commitAck) {
 	// Keep acking until meeting bigger offset.
 	cm.logger.Debugf("Received log fetch ack, offset = %d", ack.offset)
 	var shouldTryComplete = false
-	for _, entry := range cm.queue {
+	cm.waitQueue.Traverse(func(entry *commitEntry) bool {
 		if entry.offset >= ack.offset {
 			cm.logger.Debugf("entry.offset = %d", entry.offset)
-			break
+			return false
 		}
 		entry.ackedNodeName[ack.nodeName] = struct{}{}
-		if len(entry.ackedNodeName) >= entry.requiredAcksToRespond-1 {
+		if !shouldTryComplete && len(entry.ackedNodeName) >= len(cm.cachedIsrSet)-1 {
 			shouldTryComplete = true
 		}
-	}
+		return true
+	})
 	// Try to complete the first queueing element.
 	if shouldTryComplete {
 		cm.internalTryCompleteFromWaitingQueue()
@@ -280,12 +274,7 @@ func (cm *commitManager) processLogFetchAck(ack commitAck) {
 
 // handleAddWaitingEntry will be called when a writing request comes from client.
 func (cm *commitManager) processAddWaitingEntry(e *commitEntry) {
-	cm.queue = append(cm.queue, e)
-	lenAfterAppend := len(cm.queue)
-	if lenAfterAppend > 1 {
-		cm.queue[lenAfterAppend-1].nextEntry = e
-	}
-	cm.hash[e.offset] = e
+	cm.waitQueue.Enqueue(e)
 	ctrlInstance.replicationManager.logFetchDeposit.notifyAndDequeue(e.entryLength + e.offset)
 }
 
@@ -300,6 +289,9 @@ func (cm *commitManager) processIsrSetUpdated() {
 // run will boot up event dispatcher and process commit events continuously.
 func (cm *commitManager) run() {
 	cm.logger.Infof("running...")
+	defer func() {
+		cm.logger.Infof("CommitManager exiting...")
+	}()
 	for {
 		// Serialize the operations by introducing a channel, thus no need to add mutex on any elements.
 		// Because of temporal relationships, add operation of a certain offset must occur before receiving an ack.
@@ -312,6 +304,7 @@ func (cm *commitManager) run() {
 			cm.processIsrSetUpdated()
 		case commitManagerEvent_Shutdown:
 			cm.processShutdown(ev.payload.(chan struct{}))
+			return
 		}
 	}
 }

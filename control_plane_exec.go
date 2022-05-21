@@ -17,6 +17,7 @@ const (
 	ctrlCmd_AlterIsr
 	// ctrlCmd_SetLeaderName
 	// ctrlCmd_SetNodeStatus
+
 	// ctrlCmd_ReceiveCollectOffsetRequest
 	// ctrlCmd_ReceiveRoleChangeRequest
 	ctrlCmd_Shutdown
@@ -52,15 +53,15 @@ type controlPlaneCmdWrapper struct {
 	payload    interface{}
 	completeCh chan struct{}
 }
-
 type controlPlaneExecutor struct {
 	logger      *util.Logger
 	ctrlCmdPipe chan controlPlaneCmdWrapper
+	isClosed    bool
 }
 
 func newControlPlaneExecutor() *controlPlaneExecutor {
 	return &controlPlaneExecutor{
-		logger:      util.NewLogger("[CtrlExecutor]", config.LogOutputWriter),
+		logger:      util.NewLogger("[CtrlExecutor]", config.LogOutputWriter, config.EnableDebug),
 		ctrlCmdPipe: make(chan controlPlaneCmdWrapper, controlPlaneCmdChannelSize),
 	}
 }
@@ -169,6 +170,7 @@ func (ce *controlPlaneExecutor) processShutdown(wrapper controlPlaneCmdWrapper) 
 		case e := <-ce.ctrlCmdPipe:
 			ce.logger.Infof("Discarding event: %s", e.cmdtype.String())
 		default:
+			ce.isClosed = true
 			close(ce.ctrlCmdPipe)
 			ce.logger.Infof("channel cleared")
 			wrapper.completeCh <- struct{}{}
@@ -225,7 +227,7 @@ func (ce *controlPlaneExecutor) run() {
 			return
 		}
 
-		ce.logger.Infof("Handling cmd type = %s ...", cmdWrapper.cmdtype.String())
+		ce.logger.Debugf("Handling cmd type = %s ...", cmdWrapper.cmdtype.String())
 		switch cmdWrapper.cmdtype {
 		case ctrlCmd_NodeConnectionChanged:
 			ce.processNodeConnectionChanged(cmdWrapper)

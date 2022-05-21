@@ -1,4 +1,4 @@
-package main
+package client
 
 import (
 	"bufio"
@@ -23,16 +23,9 @@ var handlerRegistry = map[string]clientHandler{
 }
 var condHasLeader = util.NewConditionBlocker(func() bool { return currentLeaderHostport() != "" })
 
-func main() {
-
-	flag.String("cfg", "", "configuration file")
-	flag.Parse()
-	initCfg("")
-
-	zkMustInit()
-
-	fmt.Println("info: waiting for an available leader...")
-	go monitorCurrentLeader()
+// RunRepl starts a REPL command line interface.
+func RunRepl(configPath string) {
+	Startup(configPath)
 	sc := bufio.NewScanner(os.Stdin) // use scanner to read line by line.
 	for {
 		condHasLeader.LoopWaitUntilTrue()
@@ -41,6 +34,24 @@ func main() {
 		input := sc.Text()
 		fmt.Println(handleInput(input))
 	}
+}
+
+// Startup the client.
+func Startup(configPath string) {
+	var finalPath string
+	if configPath == "" {
+		flag.String("cfg", "", "configuration file")
+		flag.Parse()
+		finalPath = flag.Lookup("cfg").Value.String()
+	} else {
+		finalPath = configPath
+	}
+
+	initCfgWithDirectPath(finalPath)
+	zkMustInit()
+
+	fmt.Println("info: waiting for an available leader...")
+	go monitorCurrentLeader()
 }
 
 func handleInput(input string) string {

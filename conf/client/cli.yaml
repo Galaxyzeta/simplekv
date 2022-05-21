@@ -2,3 +2,4 @@ zk:
   servers:
     - 127.0.0.1:2181
   sessionTimeout: 5000
+ack: -1

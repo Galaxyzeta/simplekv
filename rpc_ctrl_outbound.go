@@ -59,52 +59,10 @@ func (c *controlPlaneRpcManager) fetchLog(ctx context.Context, hostport string, 
 		return nil, 0, err
 	} else if err = c._handleBaseResp(resp.BaseResp); err != nil {
 		return nil, 0, err
+	} else if ctrlInstance.isLeaderEpochStaleAndTryUpdate(int(resp.LeaderEpoch)) {
+		return nil, 0, config.ErrStaleLeaderEpoch
 	}
 	return resp.Data, resp.LeaderHw, nil
-}
-
-func (c *controlPlaneRpcManager) roleChange(ctx context.Context, hostport string, role proto.ServerRole) error {
-	cli, err := c.client(hostport)
-	if err != nil {
-		return err
-	}
-	resp, err := cli.RoleChange(ctx, &proto.RoleChangeRequest{
-		Role: role,
-	})
-	if err != nil {
-		return err
-	} else if err = c._handleBaseResp(resp.BaseResp); err != nil {
-		return err
-	}
-	return nil
-}
-
-func (c *controlPlaneRpcManager) collectOffset(ctx context.Context, hostport string) (int64, error) {
-	cli, err := c.client(hostport)
-	if err != nil {
-		return 0, err
-	}
-	resp, err := cli.CollectOffset(ctx, &proto.CollectOffsetRequest{})
-	if err != nil {
-		return 0, err
-	} else if err = c._handleBaseResp(resp.BaseResp); err != nil {
-		return 0, err
-	}
-	return resp.Offset, nil
-}
-
-func (c *controlPlaneRpcManager) collectWatermark(ctx context.Context, hostport string) (int64, error) {
-	cli, err := c.client(hostport)
-	if err != nil {
-		return 0, err
-	}
-	resp, err := cli.CollectWatermark(ctx, &proto.CollectWatermarkRequest{})
-	if err != nil {
-		return 0, err
-	} else if err = c._handleBaseResp(resp.BaseResp); err != nil {
-		return 0, err
-	}
-	return resp.GetHwm(), nil
 }
 
 func (c *controlPlaneRpcManager) collectLeaderEpochOffset(ctx context.Context, hostport string, myLeaderEpoch int64) (dbfile.LeaderEpochAndOffset, error) {
@@ -119,6 +77,8 @@ func (c *controlPlaneRpcManager) collectLeaderEpochOffset(ctx context.Context, h
 		return dbfile.LeaderEpochAndOffset{}, err
 	} else if err = c._handleBaseResp(resp.BaseResp); err != nil {
 		return dbfile.LeaderEpochAndOffset{}, err
+	} else if ctrlInstance.isLeaderEpochStaleAndTryUpdate(int(resp.LeaderEpoch)) {
+		return dbfile.LeaderEpochAndOffset{}, config.ErrStaleLeaderEpoch
 	}
 	return dbfile.LeaderEpochAndOffset{
 		LeaderEpoch: resp.LeaderEpoch,

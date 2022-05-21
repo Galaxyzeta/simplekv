@@ -34,7 +34,7 @@ func StringBlank(str string) bool {
 	return len(str) == 0
 }
 
-func StringListDelete(list []string, item string) {
+func StringListDelete(list []string, item string) []string {
 	pos := -1
 	for idx := range list {
 		if list[idx] == item {
@@ -44,8 +44,8 @@ func StringListDelete(list []string, item string) {
 	if pos != -1 {
 		if pos != len(list)-1 {
 			copy(list[pos:], list[pos+1:])
-		} else {
-			list = list[:len(list)-1]
 		}
+		list = list[:len(list)-1]
 	}
+	return list
 }

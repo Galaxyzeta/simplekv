@@ -28,6 +28,46 @@ type statsManager struct {
 	commitStats        *maxMinAvgStatsHolder
 	commitFaildCounter int64
 	commitStatsLock    sync.Mutex
+	cacheStats         *hitAndMissStatsHolder
+}
+
+type hitAndMissStatsHolder struct {
+	hitCnt  int64
+	missCnt int64
+}
+
+func newHitAndMissStatsHolder() *hitAndMissStatsHolder {
+	return &hitAndMissStatsHolder{}
+}
+
+func (s *hitAndMissStatsHolder) hit(cnt int64) {
+	atomic.AddInt64(&s.hitCnt, cnt)
+}
+
+func (s *hitAndMissStatsHolder) miss(cnt int64) {
+	atomic.AddInt64(&s.missCnt, cnt)
+}
+
+func (s *hitAndMissStatsHolder) getHitCnt() int64 {
+	return atomic.LoadInt64(&s.hitCnt)
+}
+
+func (s *hitAndMissStatsHolder) getMissCnt() int64 {
+	return atomic.LoadInt64(&s.missCnt)
+}
+
+func (s *hitAndMissStatsHolder) getHitRate() float64 {
+	miss := s.getMissCnt()
+	hit := s.getHitCnt()
+	total := miss + hit
+	if total == 0 {
+		return 0
+	}
+	return float64(hit) / float64(total)
+}
+
+func (s *hitAndMissStatsHolder) toString() string {
+	return fmt.Sprintf("Hit = %d | Miss = %d | HitRate = %.3f", s.getHitCnt(), s.getMissCnt(), s.getHitRate())
 }
 
 type maxMinAvgStatsHolder struct {
@@ -74,6 +114,7 @@ func newStatsManager() *statsManager {
 	return &statsManager{
 		batch:       make([]statsUpdateEvent, statsUpdateBatchInitSize),
 		commitStats: newMaxMinAvgStatsHolder(),
+		cacheStats:  newHitAndMissStatsHolder(),
 	}
 }
 
@@ -81,14 +122,21 @@ func newStatsManager() *statsManager {
 func (sm *statsManager) run() {
 	ticker := time.NewTicker(statsUpdateInterval)
 	for {
-		<-ticker.C
-		for _, eachEvent := range sm.batch {
-			switch eachEvent.tp {
-			case statsEvent_LogCommit:
-				sm.processLogCommit(eachEvent)
+		select {
+		case <-ticker.C:
+			for _, eachEvent := range sm.batch {
+				switch eachEvent.tp {
+				case statsEvent_LogCommit:
+					sm.processLogCommit(eachEvent)
+				}
+			}
+			sm.batch = sm.batch[0:0] // clear the slice
+		default:
+			if ctrlInstance.getIsShutingdown() {
+				ctrlInstance.logger.Warnf("StatManager exiting...")
+				return
 			}
 		}
-		sm.batch = sm.batch[0:0] // clear the slice
 	}
 }
 

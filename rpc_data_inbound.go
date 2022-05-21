@@ -29,18 +29,6 @@ func getErrorResponse(err string) *proto.BaseResponse {
 	}
 }
 
-func getRequiredAcks(ctx context.Context) int {
-	v := ctx.Value("requiredAcks")
-	if v == nil {
-		return 0
-	}
-	ret, ok := v.(int)
-	if !ok {
-		return 0
-	}
-	return ret
-}
-
 func checkLeader() bool {
 	return ctrlInstance != nil && ctrlInstance.isLeader()
 }
@@ -60,7 +48,7 @@ func (*SimplekvService) Set(ctx context.Context, req *proto.SetRequest) (*proto.
 	if !checkLeader() {
 		return getErrorResponse(config.ErrNotLeader.Error()), nil
 	}
-	err := Write(req.Key, req.Value, getRequiredAcks(ctx))
+	err := Write(req.Key, req.Value, int(req.RequiredAcks))
 	if err != nil {
 		return getErrorResponse(err.Error()), nil
 	}
@@ -71,7 +59,7 @@ func (*SimplekvService) Del(ctx context.Context, req *proto.DelRequest) (*proto.
 	if !checkLeader() {
 		return getErrorResponse(config.ErrNotLeader.Error()), nil
 	}
-	err := Delete(req.Key, getRequiredAcks(ctx))
+	err := Delete(req.Key, int(req.RequiredAcks))
 	if err != nil {
 		return getErrorResponse(err.Error()), nil
 	}
@@ -82,7 +70,7 @@ func (*SimplekvService) Expire(ctx context.Context, req *proto.ExpireRequest) (*
 	if !checkLeader() {
 		return getErrorResponse(config.ErrNotLeader.Error()), nil
 	}
-	err := Expire(req.Key, int(req.Ttl), getRequiredAcks(ctx))
+	err := Expire(req.Key, int(req.Ttl), int(req.RequiredAcks))
 	if err != nil {
 		return getErrorResponse(err.Error()), nil
 	}

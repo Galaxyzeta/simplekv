@@ -1,4 +1,4 @@
-package main
+package client
 
 import (
 	"context"
@@ -12,13 +12,9 @@ import (
 
 var connections map[string]proto.SimpleKVClient = make(map[string]proto.SimpleKVClient)
 
-func Client() {
-
-}
-
-// client returns the client that corresponding to current leader hostport.
+// Client returns the Client that corresponding to current leader hostport.
 // If doesn't exist, will create one and add it to the cache.
-func client() (proto.SimpleKVClient, error) {
+func Client() (proto.SimpleKVClient, error) {
 	hostport := currentLeaderHostport()
 	if hostport == "" {
 		return nil, config.ErrNoLeaderFound
@@ -54,7 +50,7 @@ func Get(ctx context.Context, param ...string) (string, error) {
 		return "", config.ErrInvalidParam
 	}
 
-	grpcClient, err := client()
+	grpcClient, err := Client()
 	if err != nil {
 		return "", err
 	}
@@ -69,13 +65,14 @@ func Set(ctx context.Context, param ...string) (string, error) {
 		return "", config.ErrInvalidParam
 	}
 
-	grpcClient, err := client()
+	grpcClient, err := Client()
 	if err != nil {
 		return "", err
 	}
 	resp, err := grpcClient.Set(ctx, &proto.SetRequest{
-		Key:   param[0],
-		Value: param[1],
+		Key:          param[0],
+		Value:        param[1],
+		RequiredAcks: ack,
 	})
 	return handleBaseResponse(resp, err)
 
@@ -86,12 +83,13 @@ func Del(ctx context.Context, param ...string) (string, error) {
 		return "", config.ErrInvalidParam
 	}
 
-	grpcClient, err := client()
+	grpcClient, err := Client()
 	if err != nil {
 		return "", err
 	}
 	resp, err := grpcClient.Del(ctx, &proto.DelRequest{
-		Key: param[0],
+		Key:          param[0],
+		RequiredAcks: ack,
 	})
 	return handleBaseResponse(resp, err)
 
@@ -106,13 +104,14 @@ func Expire(ctx context.Context, param ...string) (string, error) {
 		return "", err
 	}
 
-	grpcClient, err := client()
+	grpcClient, err := Client()
 	if err != nil {
 		return "", err
 	}
 	resp, err := grpcClient.Expire(ctx, &proto.ExpireRequest{
-		Key: param[0],
-		Ttl: uint32(ttl),
+		Key:          param[0],
+		Ttl:          uint32(ttl),
+		RequiredAcks: ack,
 	})
 	return handleBaseResponse(resp, err)
 
@@ -123,7 +122,7 @@ func TTL(ctx context.Context, param ...string) (string, error) {
 		return "", config.ErrInvalidParam
 	}
 
-	grpcClient, err := client()
+	grpcClient, err := Client()
 	if err != nil {
 		return "", err
 	}

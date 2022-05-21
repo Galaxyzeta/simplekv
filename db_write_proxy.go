@@ -23,26 +23,37 @@ func writeProxy(e dbfile.Entry, requiredAcks int) (offsetBeforeWrite int64, file
 	if err = file.Write(stream); err != nil {
 		return 0, nil, err
 	}
-	// If required Ack is bigger than 1 or need to get replicated to all ISR, add it to
-	if requiredAcks != 0 {
-		dataInstance.mu.Unlock() // Release lock here, otherwise the waiting operation will block log replication when trying to get total offset.
+	// If required Ack == ALLISR, add it to commitManager.
+	if requiredAcks == commitAck_AllIsr {
 		dataInstance.logger.Infof("Incoming entry = <%s, %s>", e.Key, e.Value)
-
-		var entry *commitEntry
-		entry, err = ctrlInstance.commitMgr.addToWaitingQueue(offsetBeforeWrite, streamLength, e, config.CommitTimeout, requiredAcks)
-		// Handle channel closed error
-		if err != nil {
-			return 0, nil, err
+		// Try to reject when there's not enough ISR
+		var isrList = ctrlInstance.replicationManager.getIsrList()
+		dataInstance.logger.Infof("IsrList = %s, minIsr = %d", isrList, config.ReplicationIsrMinRequired)
+		if len(isrList) < config.ReplicationIsrMinRequired {
+			dataInstance.logger.Infof("Rejecting entry = <%s, %s> because there's not enough ISR, current ISR = %s", e.Key, e.Value, isrList)
+			return 0, nil, config.ErrNotEnoughIsr
 		}
-		if entry.waitUntilComplete(); err != nil {
-			// might be timeout error, but should ignore that.
-			dataInstance.mu.Lock()
-			dataInstance.logger.Errorf("Entry = <%s, %s> err while waiting for %d acks: %s. Giveup waiting.", e.Key, e.Value, requiredAcks, err.Error())
-			return
+		if len(isrList) == 1 && isrList[0] == ctrlInstance.nodeName {
+			// Direct commit
 		} else {
-			dataInstance.mu.Lock()
+			// Require wait
+			dataInstance.mu.Unlock() // Release lock here, otherwise the waiting operation will block log replication when trying to get total offset.
+			var entry *commitEntry
+			entry, err = ctrlInstance.commitMgr.addToWaitingQueue(offsetBeforeWrite, streamLength, e, config.CommitTimeout, requiredAcks)
+			// Handle channel closed error
+			if err != nil {
+				return 0, nil, err
+			}
+			if entry.waitUntilComplete(); err != nil {
+				// might be timeout error, but should ignore that.
+				dataInstance.mu.Lock()
+				dataInstance.logger.Errorf("Entry = <%s, %s> err while waiting for %d acks: %s. Giveup waiting.", e.Key, e.Value, requiredAcks, err.Error())
+				return
+			} else {
+				dataInstance.mu.Lock()
+			}
 		}
 	}
-	dataInstance.logger.Infof("Entry = <%s, %s> has been commited", e.Key, e.Value)
+	dataInstance.logger.Infof("Entry = <%s, %s> has been commited, requiredAcks = %d", e.Key, e.Value, requiredAcks)
 	return
 }

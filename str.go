@@ -41,19 +41,16 @@ func delEntry(key string) {
 	tryDeleteCache(key)
 }
 
-func getVal(key string) (string, error) {
-	// check expire
-	if hasExpired(key) {
+// First try get from cache, if it's expired, delete it from index and cache.
+// If cache misses, try read it from disk.
+func getValWithNoLock(key string) (string, error) {
+	val, ok, expireErr := tryGetFromCacheAndCheckExpire(key)
+	if expireErr == config.ErrInternalRecordExpired {
 		delEntry(key)
-		return "", config.ErrRecordExpired
+		return "", config.ErrRecordNotFound
 	}
-
-	// try to get from cache
-	if dataInstance.cache != nil {
-		val, ok := dataInstance.cache.Load(key)
-		if ok {
-			return val.(string), nil
-		}
+	if ok {
+		return val, nil
 	}
 
 	// cache miss, get index and lookup disk
@@ -71,8 +68,8 @@ func getVal(key string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-
-	return string(e.Value), nil
+	ret := string(e.Value)
+	return ret, nil
 }
 
 // setValWithNoLock see func() setValWithLock
@@ -101,6 +98,7 @@ func setValWithNoLock(key string, val string, expireAt uint32, extra dbfile.Extr
 		return err
 	}
 	applyEntry(e, infileOffsetBeforeWrite, whichFile)
+	tryStoreToCache(key, val)
 	return nil
 }
 
@@ -162,6 +160,36 @@ func internalCheckDataInstanceIsReady() bool {
 	return dataInstance != nil && dataInstance.isReady()
 }
 
+// Returns:
+// - string: value
+// - bool: is found in the cache
+// - err: is the record expired
+// NOTE: to correctly handle its return value, check whether the record has expired first.
+func tryGetFromCacheAndCheckExpire(key string) (string, bool, error) {
+	var value string = ""
+	if dataInstance.cache != nil {
+		if v, hit := dataInstance.cache.Load(key); hit {
+			if strv, ok := v.(string); ok {
+				ctrlInstance.stats.cacheStats.hit(1)
+				value = strv
+			}
+		} else {
+			ctrlInstance.stats.cacheStats.miss(1)
+		}
+	}
+	// Check expire
+	if expireAt, ok := getExpiredAt(key); ok && checkExpire(expireAt) {
+		return value, true, config.ErrInternalRecordExpired
+	}
+	return value, false, nil
+}
+
+func tryStoreToCache(key string, value string) {
+	if dataInstance.cache != nil {
+		dataInstance.cache.Store(key, value)
+	}
+}
+
 // Expire set TTL of a KV entry.
 func Expire(key string, ttl int, requiredAcks int) error {
 
@@ -172,7 +200,7 @@ func Expire(key string, ttl int, requiredAcks int) error {
 	dataInstance.mu.Lock()
 	defer dataInstance.mu.Unlock()
 
-	val, err := getVal(key)
+	val, err := getValWithNoLock(key)
 	if err != nil {
 		return err // record not found or other err
 	}
@@ -226,7 +254,7 @@ func Get(key string) (string, error) {
 	}
 	dataInstance.mu.RLock()
 	defer dataInstance.mu.RUnlock()
-	return getVal(key)
+	return getValWithNoLock(key)
 }
 
 // Write writes to the disk file and then update the index and the cache.

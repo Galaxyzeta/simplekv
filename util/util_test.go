@@ -54,6 +54,30 @@ func TestCondBlocker(t *testing.T) {
 }
 
 func TestLogger(t *testing.T) {
-	logger := NewLogger("[Test]", os.Stdout)
+	logger := NewLogger("[Test]", os.Stdout, true)
 	logger.Infof("hello")
+}
+
+type replicationRecord struct {
+	offset int
+}
+
+func (i replicationRecord) Get() int {
+	return i.offset
+}
+
+func TestHashQueue(t *testing.T) {
+	hq := NewIntHashQueue[replicationRecord]()
+	offsets := []int{
+		1, 2, 3, 4, 5,
+	}
+	for _, eachoffset := range offsets {
+		hq.Enqueue(&replicationRecord{
+			offset: eachoffset,
+		})
+	}
+	hq.TryComplete(func(v *replicationRecord) bool {
+		return v.offset < 3
+	})
+	t.Log(hq.Head().Get())
 }

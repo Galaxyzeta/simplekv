@@ -4,38 +4,167 @@ import (
 	"fmt"
 	"io"
 	"strconv"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/galaxyzeta/simplekv/config"
 	"github.com/galaxyzeta/simplekv/dbfile"
+	"github.com/galaxyzeta/simplekv/util"
 	"github.com/stretchr/testify/assert"
 )
+
+func testTimeEstimate(t *testing.T, fn func()) {
+	timeStart := time.Now()
+	fn()
+	t.Logf("TIME = %d ms", time.Since(timeStart).Milliseconds())
+}
+
+func testSetNoErr(t *testing.T, k, v string, requiredAck int) {
+	assert.NoError(t, Write(k, v, requiredAck))
+}
+
+func testDeleteNoErr(t *testing.T, k string, requiredAck int) {
+	assert.NoError(t, Delete(k, requiredAck))
+}
+
+func testExpireNoErr(t *testing.T, k string, ttl int, requiredAck int) {
+	assert.NoError(t, Expire(k, ttl, requiredAck))
+}
+
+func testExpireExpectError(t *testing.T, k string, ttl int, requiredAck int, expectedError error) {
+	err := Expire(k, ttl, requiredAck)
+	assert.Equal(t, expectedError, err)
+}
+
+func testGetNoErrAndExpect(t *testing.T, k, expect string) {
+	v, err := Get(k)
+	if err != nil {
+		assert.NoError(t, err)
+		assert.Equal(t, expect, v)
+	}
+}
+
+func testGetExpectError(t *testing.T, k string, expectedError error) {
+	_, err := Get(k)
+	assert.Equal(t, expectedError, err)
+}
 
 func TestBasicIO(t *testing.T) {
 	testBootServerStandalone()
 	defer ShutdownServerGracefully(true)
+	requiredAck := 0
 
-	err := Write("hello", "world", 0)
-	assert.NoError(t, err)
+	testGetExpectError(t, "a", config.ErrRecordNotFound)
+	testSetNoErr(t, "a", "123", requiredAck)
+	testGetNoErrAndExpect(t, "a", "123")
+	testSetNoErr(t, "b", "hello world", requiredAck)
+	testGetNoErrAndExpect(t, "b", "hello world")
+	testDeleteNoErr(t, "a", requiredAck)
+	testDeleteNoErr(t, "a", requiredAck)
+	testExpireNoErr(t, "b", 2, requiredAck)
+	testGetNoErrAndExpect(t, "b", "2")
+	time.Sleep(time.Second * 2)
+	testGetExpectError(t, "b", config.ErrRecordNotFound)
+}
 
-	v, err := Get("hello")
-	assert.NoError(t, err)
-	assert.Equal(t, "world", v)
+func TestBasicIOWithRestart(t *testing.T) {
+	testBootServerStandalone()
+	defer ShutdownServerGracefully(true)
+	requiredAck := 0
 
-	err = Write("hello", "world2", 0)
-	assert.NoError(t, err)
+	testSetNoErr(t, "asd", "qwe", requiredAck)
+	testSetNoErr(t, "asd2", "qwe2", requiredAck)
+	testExpireNoErr(t, "asd", 1, requiredAck)
+	testRestartServerAndWaitUntilOK()
+	time.Sleep(time.Second)
+	testGetExpectError(t, "asd", config.ErrRecordNotFound)
+	testGetNoErrAndExpect(t, "asd2", "qwe2")
+}
 
-	v, err = Get("hello")
-	assert.NoError(t, err)
-	assert.Equal(t, "world2", v)
+func TestCacheHitRate(t *testing.T) {
+	const iterationCount = 10
+	testBootServerStandalone(func() {
+		config.DataLruCapacity = 5
+	})
+	defer ShutdownServerGracefully(true)
+	requiredAck := 0
 
-	err = Delete("hello", 0)
-	assert.NoError(t, err)
+	getKey := func(i int) string {
+		return fmt.Sprintf("hello-%d", i)
+	}
+	getVal := func(i int) string {
+		return strconv.FormatInt(int64(i), 10)
+	}
+	for i := range util.Iter(iterationCount) {
+		testSetNoErr(t, getKey(i), getVal(i), requiredAck)
+	}
+	for i := range util.Iter(iterationCount) {
+		testGetNoErrAndExpect(t, getKey(i), getVal(i))
+	}
+	for i := iterationCount; i < iterationCount*2; i++ {
+		testGetExpectError(t, getKey(i), config.ErrRecordNotFound)
+	}
+	t.Log(ctrlInstance.stats.cacheStats.toString())
+}
 
-	_, err = Get("hello")
-	assert.ErrorIs(t, err, config.ErrRecordNotFound)
+func TestConcurrentIO(t *testing.T) {
+	const iterationCount = 10
+	testBootServerStandalone(func() {
+		config.DataLruCapacity = 1000
+	})
+	defer ShutdownServerGracefully(true)
+	getKey := func(n int) string {
+		return fmt.Sprintf("test-%d", n)
+	}
+	getValue := func(n int) string {
+		return fmt.Sprintf("%d", n)
+	}
+	const iteration = 1000
+	const requiredAck = 0
+	wg := sync.WaitGroup{}
+	for i := range util.Iter(iteration) {
+		wg.Add(1)
+		go func(val int) {
+			if e := Write(getKey(val), getValue(val), requiredAck); e != nil {
+				t.Fail()
+				t.Log(e)
+			}
+			wg.Done()
+		}(i)
+	}
+	wg.Wait()
+	for i := range util.Iter(iteration) {
+		wg.Add(1)
+		go func(val int) {
+			if v, e := Get(getKey(val)); e != nil || v != getValue(val) {
+				t.Fail()
+				t.Log(e)
+			}
+			wg.Done()
+		}(i)
+	}
+	wg.Wait()
+}
 
+func TestBasicOpTimecost(t *testing.T) {
+	testBootServerStandalone()
+	iteration := 10000
+	arr := make([][]string, iteration)
+	it := util.Iter(iteration)
+	for i := range it {
+		arr[i] = ([]string{
+			fmt.Sprintf("hello-%d", i),
+			strconv.FormatInt(int64(i), 10),
+		})
+	}
+	requiredAck := 1
+	testTimeEstimate(t, func() {
+		for i := range it {
+			Write(arr[i][0], arr[i][1], requiredAck)
+			// Get(arr[i][0])
+		}
+	})
 }
 
 func TestLoadTwice(t *testing.T) {
@@ -59,7 +188,7 @@ func TestLoadTwice(t *testing.T) {
 	time.Sleep(time.Second)
 
 	v, err := Get("hello")
-	assert.ErrorIs(t, err, config.ErrRecordExpired)
+	assert.ErrorIs(t, err, config.ErrRecordNotFound)
 	assert.Equal(t, "", v)
 
 	// server restart and wait until OK
@@ -134,7 +263,7 @@ func TestExpire(t *testing.T) {
 	// cause the record to expire
 
 	val, err = Get("hello")
-	assert.ErrorIs(t, err, config.ErrRecordExpired)
+	assert.ErrorIs(t, err, config.ErrRecordNotFound)
 	assert.Equal(t, "", val)
 
 	val, err = Get("hello")

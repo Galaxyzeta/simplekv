@@ -15,7 +15,7 @@ type leaderElectionManagerV2 struct {
 
 func newLeaderElectionManagerV2() *leaderElectionManagerV2 {
 	return &leaderElectionManagerV2{
-		logger: util.NewLogger("[LeaderElecMgrV2]", config.LogOutputWriter),
+		logger: util.NewLogger("[LeaderElecMgrV2]", config.LogOutputWriter, config.EnableDebug),
 	}
 }
 
@@ -37,6 +37,10 @@ func (em *leaderElectionManagerV2) startUp() {
 // processElect will be invoked by event polling from cmdExecutor.
 func (em *leaderElectionManagerV2) processElect() {
 	for {
+		if ctrlInstance.getIsShutingdown() {
+			em.logger.Warnf("Exiting leader election: shutdown detected")
+			break
+		}
 		leaderData, err := zkGetLeader()
 		hasLeader := true
 		if err != nil {
@@ -52,7 +56,13 @@ func (em *leaderElectionManagerV2) processElect() {
 				var validIsrList []string
 				validIsrList, err = em.fetchValidIsrList()
 				em.logger.Infof("I am still leader after a short disconnection")
-				em.becomeLeaderWithValidIsr(validIsrList)
+				// SetLeadrWithInfiniteRery: This prevents the situation when the leader
+				// node recovers from a short disconnection, meanwhile detects leader node lost since the session
+				// is no longer exist after the crash of previous application which wrote the node got crashed. Although
+				// the leader logically stays unchanged, the node who actually wrote the /leader node has crashed, causing
+				// the session probable to vanish anytime before setting current leader name again.
+				em.resetLeaderWithInfiniteRetry()
+				em.becomeLeaderWithValidIsr(validIsrList, false)
 				return
 			} else {
 				// If there's an existing leader, just set current leader name and we're finished.
@@ -107,7 +117,7 @@ func (em *leaderElectionManagerV2) processElect() {
 				if validIsrList[0] == ctrlInstance.nodeName {
 					if em.trySetLeaderOrBackoff() {
 						em.logger.Infof("I won leader election since I'm the first living node in ISR")
-						em.becomeLeaderWithValidIsr(validIsrList)
+						em.becomeLeaderWithValidIsr(validIsrList, true)
 						break
 					}
 				} else {
@@ -129,7 +139,7 @@ func (em *leaderElectionManagerV2) becomeLeaderWithNoISR() {
 		return err
 	}, config.RetryBackoff)
 
-	em.becomeLeaderWithValidIsr(livingNodes)
+	em.becomeLeaderWithValidIsr(livingNodes, true)
 }
 
 func (em *leaderElectionManagerV2) errorOmitWrapper(fn func() error) func() {
@@ -141,26 +151,44 @@ func (em *leaderElectionManagerV2) errorOmitWrapper(fn func() error) func() {
 }
 
 // This method is triggered when a new leader come to power.
-func (em *leaderElectionManagerV2) becomeLeaderWithValidIsr(validIsrList []string) {
+func (em *leaderElectionManagerV2) becomeLeaderWithValidIsr(validIsrList []string, isNewLeader bool) {
 	ctrlInstance.replicationManager.setNewIsrAndCache(validIsrList)
 
-	newLeaderEpoch := zkIncreLeaderEpochInfiniteRetry()
-	em.persistLeaderEpochAndLogOffset(newLeaderEpoch)
+	var currentLeaderEpoch int64
+	if isNewLeader {
+		newLeaderEpoch := zkIncreLeaderEpochInfiniteRetry()
+		em.persistLeaderEpochAndLogOffset(newLeaderEpoch)
+		em.logger.Infof("leaderEpoch updated to %d", newLeaderEpoch)
+		currentLeaderEpoch = newLeaderEpoch
+	} else {
+		var lep int64
+		var err error
+		util.RetryInfinite(func() error {
+			lep, err = zkGetLeaderEpoch()
+			if err != nil {
+				return err
+			}
+			return nil
+		}, config.RetryBackoff)
+		currentLeaderEpoch = lep
+		em.logger.Infof("leaderEpoch is %d. No leaderEpoch update.", lep)
+	}
+	em.logger.Infof("set leaderEpoch to %d", int(currentLeaderEpoch))
+	ctrlInstance.setLeaderEpoch(int(currentLeaderEpoch)) // NOTICE: must update leader epoch
 
 	enqueueNodeConnectionChangedWrapper := em.errorOmitWrapper(ctrlInstance.cmdExecutor.enqueueNodeConnectionChanged)
 	enqueueLeaderElectionWrapper := em.errorOmitWrapper(ctrlInstance.cmdExecutor.enqueueLeaderElection)
 
 	zkMonitorChildren(ZkPathNodeConnection, enqueueNodeConnectionChangedWrapper) // Watch on connection folder
-	zKMonitorNodeLost(ZkPathLeaderNode, enqueueLeaderElectionWrapper)
-
-	go ctrlInstance.replicationManager.isrUpdateRoutine(config.ReplicationIsrUpdateInterval) // Regularly update Isr
+	zKMonitorNodeLost(ZkPathLeaderNode, enqueueLeaderElectionWrapper, true)
 
 	ctrlInstance.setCurrentLeaderName(ctrlInstance.nodeName)
+	ctrlInstance.replicationManager.tryBootIsrUpdateRoutine(config.ReplicationIsrUpdateInterval) // Regularly update Isr
 }
 
 func (em *leaderElectionManagerV2) becomeFollower(leaderName string) {
 	enqueueLeaderElectionWrapper := em.errorOmitWrapper(ctrlInstance.cmdExecutor.enqueueLeaderElection)
-	zKMonitorNodeLost(ZkPathLeaderNode, enqueueLeaderElectionWrapper)
+	zKMonitorNodeLost(ZkPathLeaderNode, enqueueLeaderElectionWrapper, true)
 	ctrlInstance.setCurrentLeaderName(leaderName)
 }
 
@@ -246,14 +274,17 @@ func (em *leaderElectionManagerV2) trySetLeaderOrBackoff() bool {
 	}
 }
 
+func (em *leaderElectionManagerV2) resetLeaderWithInfiniteRetry() {
+	zkForceDeleteNodeWithInfiniteRetry(ZkPathLeaderNode)
+	zkSetLeaderInfiniteRetry(util.MakeZkLeader(ctrlInstance.nodeName, ctrlInstance.getSelfHost(), ctrlInstance.getSelfDataHostport()))
+}
+
+// Delete the old node if it exists, then create a new node and put it under living node directory.
 func (em *leaderElectionManagerV2) registerNodeWithInfiniteRetry() {
-	util.RetryInfinite(func() error {
-		err := zkRegisterNode(ctrlInstance.nodeName)
-		if err != nil && !zkNodeExistErr(err) {
-			return err
-		}
-		return nil
-	}, config.RetryBackoff)
+	path := zkGetLivingNodeFullPath(ctrlInstance.nodeName)
+	zkForceDeleteNodeWithInfiniteRetry(path)
+	zkRegisterNodeWithInfiniteRetry(path)
+	zkUtilLogger.Infof("Registering %s to znode OK", path)
 }
 
 func (em *leaderElectionManagerV2) persistLeaderEpochAndLogOffset(leaderEpoch int64) {
@@ -278,5 +309,7 @@ func (em *leaderElectionManagerV2) onReceiveGetLeaderEpochAndLogOffsetRequest(le
 		} // Do a validate
 		return dbfile.LeaderEpochAndOffset{}, fmt.Errorf("no leader epoch was found")
 	}
+	var ld = leaderEpochAndOffset[index]
+	em.logger.Infof("returning leaderEpoch = %d, offset = %d", ld.LeaderEpoch, ld.Offset)
 	return leaderEpochAndOffset[index], nil
 }

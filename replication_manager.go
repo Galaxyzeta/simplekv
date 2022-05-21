@@ -57,8 +57,15 @@ func (ld *logFetchDelayer) purgeTimeout(interval time.Duration) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {
-		<-ticker.C
-		ld.internalPurgeTimeout()
+		if ctrlInstance.getIsShutingdown() {
+			ctrlInstance.logger.Warnf("logFetchDelayer exiting...")
+			break
+		}
+		select {
+		case <-ticker.C:
+			ld.internalPurgeTimeout()
+		default:
+		}
 	}
 }
 
@@ -141,23 +148,25 @@ type nodeReplicationStatus struct {
 }
 
 type replicationManager struct {
-	logger        *util.Logger
-	rwmu          sync.RWMutex                      // mainly protect isrSet
-	isrList       []string                          // leader only
-	nodeStatusMap map[string]*nodeReplicationStatus // leader only
-	sigkill       chan struct{}
+	logger               *util.Logger
+	rwmu                 sync.RWMutex                      // mainly protect isrSet
+	isrList              []string                          // leader only
+	nodeStatusMap        map[string]*nodeReplicationStatus // leader only
+	sigkill              chan struct{}
+	isrUpdateRoutineOnce *sync.Once
 
 	logFetchDeposit *logFetchDelayer // blocks log fetch request when there's no more log to get.
 }
 
 func newReplicaManager(node2hostport map[string]string) *replicationManager {
 	rm := &replicationManager{
-		logger:          util.NewLogger("[ReplicaManager]", config.LogOutputWriter),
-		rwmu:            sync.RWMutex{},
-		isrList:         make([]string, 0, len(node2hostport)),
-		nodeStatusMap:   make(map[string]*nodeReplicationStatus, len(node2hostport)),
-		logFetchDeposit: newLogFetchDelayer(config.ReplicationLogDelayerTimeout * 10), // TODO take this value from config
-		sigkill:         make(chan struct{}, 1),
+		logger:               util.NewLogger("[ReplicaManager]", config.LogOutputWriter, config.EnableDebug),
+		rwmu:                 sync.RWMutex{},
+		isrList:              make([]string, 0, len(node2hostport)),
+		nodeStatusMap:        make(map[string]*nodeReplicationStatus, len(node2hostport)),
+		logFetchDeposit:      newLogFetchDelayer(config.ReplicationLogDelayerTimeout * 10), // TODO take this value from config
+		sigkill:              make(chan struct{}, 1),
+		isrUpdateRoutineOnce: &sync.Once{},
 	}
 	for nodeName := range node2hostport {
 		rm.nodeStatusMap[nodeName] = &nodeReplicationStatus{}
@@ -198,9 +207,16 @@ func (r *replicationManager) cloneIsrList(needLock bool) []string {
 	return ret
 }
 
+// Make sure to use this readonly.
+func (r *replicationManager) getIsrList() []string {
+	r.rwmu.RLock()
+	defer r.rwmu.RUnlock()
+	return r.isrList
+}
+
 // Overwrite old isrSet.
 func (r *replicationManager) setNewIsrAndCache(newIsrList []string) {
-	r.logger.Debugf("attempting to set newIsrList to %v", newIsrList)
+	r.logger.Infof("attempting to set newIsrList to %v", newIsrList)
 	util.RetryInfinite(func() error {
 		return zkSetIsr(newIsrList)
 	}, config.RetryBackoff)
@@ -208,13 +224,13 @@ func (r *replicationManager) setNewIsrAndCache(newIsrList []string) {
 	r.rwmu.Lock()
 	defer r.rwmu.Unlock()
 	r.isrList = newIsrList
-	r.logger.Debugf("isr set Ok")
+	r.logger.Infof("isr set Ok")
 }
 
 // updateWatermark updates self watermark.
 // This should be processed sequentially by commit a request to commitMgr first.
 func (r *replicationManager) updateWatermark() {
-	clonedIsrList := r.cloneIsrList(true)
+	clonedIsrList := r.getIsrList()
 	clonedIsrSet := util.StringList2Set(clonedIsrList)
 	toUpdateHw := dataInstance.vars.ReadWatermarkFromCache()
 	for nodeName, eachStat := range r.nodeStatusMap {
@@ -260,7 +276,7 @@ func (r *replicationManager) updateNodeStatus(nodeName string, reqOffset int64) 
 // Isr is updated in a fixed interval by a scheduled goroutine.
 func (r *replicationManager) processTryUpdateIsr() {
 	// Warning: needs to maintain Isr order unchanged !
-	oldIsrList := r.cloneIsrList(true)
+	oldIsrList := r.getIsrList()
 	oldIsrSet := util.StringList2Set(oldIsrList)
 	newIsrList := make([]string, len(oldIsrList))
 	copy(newIsrList, oldIsrList)
@@ -294,12 +310,12 @@ func (r *replicationManager) processTryUpdateIsr() {
 				r.logger.Infof("Node %s is out of sync because it didn't receive fetch request in %v since %v", nodeName, config.ReplicationIsrMaxNoFetchTime, status.lastFetchTime)
 				isOutOfSync = true
 			} else if time.Since(status.lastCatchupTime) > config.ReplicationIsrMaxCatchUpTime {
-				isOutOfSync = true
 				r.logger.Infof("Node %s is out of sync because it didn't catch up leader in %v since %v", nodeName, config.ReplicationIsrMaxCatchUpTime, status.lastCatchupTime)
+				isOutOfSync = true
 			}
 			if isOutOfSync {
 				// Remove from ISR cache and update ZK.
-				util.StringListDelete(newIsrList, nodeName)
+				newIsrList = util.StringListDelete(newIsrList, nodeName)
 				hasModified = true
 			}
 		} else {
@@ -320,14 +336,23 @@ func (r *replicationManager) processTryUpdateIsr() {
 	}
 	// We have to persist it to zookeeper, if any modification is detected.
 	if hasModified {
+		r.logger.Infof("ISR has been modified")
 		r.setNewIsrAndCache(newIsrList)
 		if err := ctrlInstance.commitMgr.enqueueIsrSetUpdated(); err != nil {
 			r.logger.Errorf("Enqueue isrSet updated err: %s", err.Error()) // Most likely channel closed error
 		}
-		r.logger.Debugf("Current ISR = %v", newIsrList)
+		r.logger.Infof("Current ISR = %v", newIsrList)
 	}
 }
 
+// Boot isrUpdateRoutine once.
+func (r *replicationManager) tryBootIsrUpdateRoutine(interval time.Duration) {
+	r.isrUpdateRoutineOnce.Do(func() {
+		go r.isrUpdateRoutine(interval)
+	})
+}
+
+// Do not call this directly.
 func (r *replicationManager) isrUpdateRoutine(checkInterval time.Duration) {
 	ticker := time.NewTicker(checkInterval)
 	for {
@@ -344,33 +369,28 @@ func (r *replicationManager) isrUpdateRoutine(checkInterval time.Duration) {
 }
 
 // onReceiveLogFetch will be handled when there's an log fetch request.
-func (r *replicationManager) onReceiveLogFetchRequest(nodeName string, fromOffset int64, count int64) (ret [][]byte, err error) {
+func (r *replicationManager) onReceiveLogFetchRequest(nodeName string, fromOffset int64, count int64) (ret [][]byte, leaderEpoch int64, err error) {
 
 	totalOffsetSnapshot := dataInstance.totalOffset()
 
-	r.logger.Debugf("LogFetchRequest received, params: fromOffset = %d. Leader's log totalOffset = %d", fromOffset, totalOffsetSnapshot)
+	r.logger.Debugf("LogFetchRequest received from %s, params: fromOffset = %d. Leader's log totalOffset = %d", nodeName, fromOffset, totalOffsetSnapshot)
 	// If not leader, cannot respond.
 	if !ctrlInstance.isLeader() {
 		r.logger.Errorf("Refuse to serve data because I'm not leader")
-		return nil, config.ErrNotLeader
+		return nil, 0, config.ErrNotLeader
 	}
 
-	// Try to ack all previous commits which has HW < fetchLog.Offset.
-	hw := dataInstance.vars.ReadWatermarkFromCache()
-	// @debugging
-	r.logger.Debugf("high-watermark = %d", hw)
-	if fromOffset >= hw {
-		// Try to commit an uncommited offset.
-		ctrlInstance.commitMgr.enqueueReceiveLogFetchReqEvent(nodeName, fromOffset)
-	}
+	// Try to commit an uncommited offset.
+	ctrlInstance.commitMgr.enqueueReceiveLogFetchReqEvent(nodeName, fromOffset)
 
+	leaderEpoch = int64(ctrlInstance.getLeaderEpoch())
 	// If there's no more logs to read, append to waiting pool.
 	if fromOffset >= totalOffsetSnapshot {
 		entry := ctrlInstance.replicationManager.logFetchDeposit.enqueue(fromOffset)
 		if !entry.wait() {
 			// Timeout, returns nil data.
-			r.logger.Debugf("timeout")
-			return nil, nil
+			r.logger.Debugf("node %s's log fetch request from %d to %d was timeout", nodeName, fromOffset, fromOffset+count)
+			return nil, leaderEpoch, nil
 		}
 		// Else, log has been updated, try to fetch log.
 	}
@@ -379,6 +399,8 @@ func (r *replicationManager) onReceiveLogFetchRequest(nodeName string, fromOffse
 	if err != nil {
 		if err == io.EOF || err == config.ErrFileNotFound || err == config.ErrRecordNotFound {
 			err = nil
+		} else {
+			r.logger.Warnf("readEntries from offset = %d with count = %d contain err: %s", fromOffset, count, err.Error())
 		}
 	}
 	return
